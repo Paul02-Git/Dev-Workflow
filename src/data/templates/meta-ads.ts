@@ -1,0 +1,125 @@
+import type { TemplateDef } from "./types";
+
+export const metaAdsTemplate: TemplateDef = {
+  key: "meta_ads",
+  name: "Meta Ads",
+  technologyKey: "meta_ads",
+  tasks: [
+    // --- Setup ---------------------------------------------------------
+    {
+      canonicalKey: "access.meta_business_manager",
+      stage: "access_credentials",
+      title: "Confirm Meta Business Manager access",
+      priority: "CRITICAL",
+      isCritical: true,
+    },
+    {
+      canonicalKey: "access.meta_ad_account",
+      stage: "access_credentials",
+      title: "Confirm ad account access",
+      dependsOn: ["access.meta_business_manager"],
+      priority: "CRITICAL",
+      isCritical: true,
+    },
+    {
+      canonicalKey: "access.meta_page",
+      stage: "access_credentials",
+      title: "Confirm Facebook Page access",
+      dependsOn: ["access.meta_business_manager"],
+      priority: "HIGH",
+    },
+    {
+      canonicalKey: "access.meta_instagram",
+      stage: "access_credentials",
+      title: "Confirm Instagram access",
+      dependsOn: ["access.meta_business_manager"],
+      priority: "MEDIUM",
+    },
+    {
+      canonicalKey: "ads.meta.domain_verification",
+      stage: "advertising",
+      title: "Verify domain in Meta Business portfolio",
+      dependsOn: ["access.meta_business_manager", "access.domain_registrar"],
+      priority: "HIGH",
+    },
+    {
+      canonicalKey: "ads.meta.pixel_install",
+      stage: "advertising",
+      title: "Install Meta Pixel",
+      description: "Via Shopify's Facebook & Instagram app where available, otherwise via GTM or direct code.",
+      dependsOn: ["access.meta_ad_account"],
+      priority: "CRITICAL",
+      isCritical: true,
+    },
+    {
+      canonicalKey: "ads.meta.events_config",
+      stage: "advertising",
+      title: "Configure standard/custom events",
+      dependsOn: ["ads.meta.pixel_install"],
+      priority: "HIGH",
+    },
+    {
+      canonicalKey: "ads.meta.capi",
+      stage: "advertising",
+      title: "Configure Conversions API where appropriate",
+      dependsOn: ["ads.meta.events_config"],
+      priority: "HIGH",
+    },
+    {
+      canonicalKey: "ads.meta.audiences",
+      stage: "advertising",
+      title: "Build audiences",
+      dependsOn: ["ads.meta.pixel_install"],
+      priority: "MEDIUM",
+    },
+    {
+      canonicalKey: "ads.meta.attribution_settings",
+      stage: "advertising",
+      title: "Configure attribution settings",
+      dependsOn: ["ads.meta.events_config"],
+      priority: "MEDIUM",
+    },
+    {
+      canonicalKey: "ads.meta.campaign_tracking",
+      stage: "advertising",
+      title: "Set up campaign tracking (UTMs, naming convention)",
+      dependsOn: ["ads.meta.audiences"],
+      priority: "MEDIUM",
+    },
+    // --- Testing ---------------------------------------------------------
+    {
+      canonicalKey: "ads.meta.event_testing",
+      stage: "qa",
+      title: "Test events with Meta's Test Events tool",
+      description: "Confirm browser and server (CAPI) events fire and deduplicate correctly.",
+      dependsOn: ["ads.meta.capi"],
+      priority: "CRITICAL",
+      isCritical: true,
+    },
+    {
+      canonicalKey: "ads.meta.event_matching",
+      stage: "qa",
+      title: "Verify event match quality",
+      dependsOn: ["ads.meta.event_testing"],
+      priority: "MEDIUM",
+    },
+    // --- Verification ---------------------------------------------------------
+    {
+      canonicalKey: "ads.meta.production_verification",
+      stage: "launch",
+      title: "Verify Pixel/CAPI events firing correctly in production",
+      dependsOn: ["ads.meta.event_testing"],
+      priority: "CRITICAL",
+      isCritical: true,
+    },
+    // --- Optimization ---------------------------------------------------------
+    {
+      canonicalKey: "ads.meta.optimization_review",
+      stage: "post_launch",
+      title: "30-day campaign optimization review",
+      description: "Attribution accuracy, audience performance, creative refresh cadence.",
+      dependsOn: ["ads.meta.production_verification"],
+      priority: "LOW",
+    },
+  ],
+};
