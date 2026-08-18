@@ -1,4 +1,9 @@
 import Link from "next/link";
+import { logoutAction } from "@/lib/auth-actions";
+import { CommandPalette } from "@/components/command-palette";
+import { SearchTrigger } from "@/components/search-trigger";
+import { ProjectSwitcher } from "@/components/project-switcher";
+import { listProjectsForSwitcher } from "@/lib/queries/projects";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -6,6 +11,7 @@ const NAV = [
   { href: "/tasks", label: "Tasks" },
   { href: "/today", label: "Today" },
   { href: "/clients", label: "Clients" },
+  { href: "/maintenance", label: "Maintenance" },
   { href: "/templates", label: "Workflow Templates" },
   { href: "/qa", label: "QA" },
   { href: "/reports", label: "Reports" },
@@ -13,18 +19,28 @@ const NAV = [
   { href: "/settings", label: "Settings" },
 ];
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const switcherProjects = await listProjectsForSwitcher();
+
   return (
-    <div className="flex min-h-screen bg-[#f9f9f7] text-[#0b0b0b]">
-      <aside className="w-56 shrink-0 border-r border-black/10 bg-[#fcfcfb] p-4">
-        <div className="mb-6 flex items-center gap-2 border-b border-black/10 pb-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#2a78d6] text-xs font-bold text-white">
+    <div className="flex min-h-screen bg-background text-foreground">
+      <aside className="w-56 shrink-0 border-r border-border bg-card p-4">
+        <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
             DX
           </div>
           <div>
             <div className="text-sm font-semibold leading-tight">Workflow OS</div>
-            <div className="text-[11px] text-[#898781]">MVP</div>
+            <div className="text-[11px] text-muted-foreground">MVP</div>
           </div>
+        </div>
+        {/* Jumping straight to a specific project is the most frequent
+            sidebar action for a solo dev juggling several at once, so it
+            gets the prime spot right under the logo. Search still works
+            everywhere via Ctrl/Cmd+K; its visible trigger moved to the
+            bottom to make room. */}
+        <div className="mb-4">
+          <ProjectSwitcher projects={switcherProjects} />
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => (
@@ -37,8 +53,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
           ))}
         </nav>
+        <div className="mt-4 border-t border-border pt-3">
+          <SearchTrigger />
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
+            >
+              Log out
+            </button>
+          </form>
+        </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="min-w-0 flex-1 p-8">{children}</main>
+      <CommandPalette />
     </div>
   );
 }

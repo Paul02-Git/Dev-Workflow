@@ -38,7 +38,8 @@ export const discoveryTemplate: TemplateDef = {
     {
       canonicalKey: "access.domain_registrar",
       stage: "access_credentials",
-      title: "Receive domain registrar access",
+      title: "Confirm domain access",
+      description: "Usually covered by agency-level GoDaddy access — add the domain there. If it's registered elsewhere, get registrar access from the client instead.",
       priority: "HIGH",
     },
     {

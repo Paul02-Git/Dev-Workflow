@@ -41,12 +41,12 @@ export default function TemplatesPage() {
 
 function TemplateCard({ template }: { template: (typeof ALL_TEMPLATES)[number] }) {
   return (
-    <details className="rounded-xl border border-black/10 bg-[#fcfcfb]">
+    <details className="rounded-xl border border-border bg-card">
       <summary className="cursor-pointer px-5 py-3 text-sm font-semibold">
         {template.name}
-        <span className="ml-2 font-normal text-[#898781]">{template.tasks.length} task(s)</span>
+        <span className="ml-2 font-normal text-muted-foreground">{template.tasks.length} task(s)</span>
       </summary>
-      <div className="divide-y divide-black/5 border-t border-black/10">
+      <div className="divide-y divide-black/5 border-t border-border">
         {template.tasks.map((task) => (
           <div key={task.canonicalKey} className="px-5 py-2.5 text-sm">
             <div className="flex items-center gap-2">
@@ -57,7 +57,7 @@ function TemplateCard({ template }: { template: (typeof ALL_TEMPLATES)[number] }
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-[#898781]">
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
               <span>{stageNameByKey.get(task.stage) ?? task.stage}</span>
               <span style={{ color: PRIORITY_COLORS[task.priority ?? "MEDIUM"] }}>
                 {task.priority ?? "MEDIUM"}
@@ -68,7 +68,7 @@ function TemplateCard({ template }: { template: (typeof ALL_TEMPLATES)[number] }
             </div>
             {task.description && <div className="mt-0.5 text-xs text-[#52514e]">{task.description}</div>}
             {task.subtasks && task.subtasks.length > 0 && (
-              <ul className="mt-1 list-inside list-disc text-xs text-[#898781]">
+              <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
                 {task.subtasks.map((s) => (
                   <li key={s}>{s}</li>
                 ))}

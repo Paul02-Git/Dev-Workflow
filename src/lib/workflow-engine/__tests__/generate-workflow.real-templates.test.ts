@@ -11,6 +11,81 @@ describe("generateWorkflow — real seeded templates", () => {
     expect(wpAdmin[0].sourceTemplateKeys).toEqual(["wordpress"]);
   });
 
+  it("GA4/GSC/Clarity/GTM: properties are created by the agency, not gated on client-granted access, with ownership handed over at the end", () => {
+    const result = generateWorkflow(["ga4", "gsc", "clarity", "gtm"]);
+    const keys = new Set(result.tasks.map((t) => t.canonicalKey));
+
+    // property/container creation tasks exist and don't wait on any client access grant
+    for (const [creationKey, verificationKey, handoffKey] of [
+      ["analytics.ga4.property", "analytics.ga4.verify_conversions", "handoff.ga4_ownership"],
+      ["seo.gsc.add_property", "seo.gsc.pages_indexed", "handoff.gsc_ownership"],
+      ["tracking.clarity.project", "tracking.clarity.verify_production", "handoff.clarity_ownership"],
+      ["tracking.gtm.container_created", "tracking.gtm.production_verification", "handoff.gtm_ownership"],
+    ] as const) {
+      expect(keys.has(creationKey)).toBe(true);
+      expect(keys.has(handoffKey)).toBe(true);
+      expect(
+        result.dependencies.some((d) => d.taskCanonicalKey === handoffKey && d.dependsOnCanonicalKey === verificationKey)
+      ).toBe(true);
+    }
+
+    // handoff ownership tasks land in the handoff stage, after the working setup is verified
+    const order = new Map(result.tasks.map((t, i) => [t.canonicalKey, i]));
+    expect(order.get("analytics.ga4.verify_conversions")!).toBeLessThan(order.get("handoff.ga4_ownership")!);
+
+    for (const dep of result.dependencies) {
+      expect(keys.has(dep.taskCanonicalKey)).toBe(true);
+      expect(keys.has(dep.dependsOnCanonicalKey)).toBe(true);
+    }
+  });
+
+  it("GSC ownership verification depends on domain access, since it's a real DNS TXT prerequisite", () => {
+    const result = generateWorkflow(["gsc"]);
+    expect(
+      result.dependencies.some(
+        (d) => d.taskCanonicalKey === "seo.gsc.verify_ownership" && d.dependsOnCanonicalKey === "access.domain_registrar"
+      )
+    ).toBe(true);
+  });
+
+  it("WordPress + Elementor: Cloudways setup precedes core install, and forms wait on SMTP", () => {
+    const result = generateWorkflow(["wordpress", "elementor"]);
+    const keys = new Set(result.tasks.map((t) => t.canonicalKey));
+
+    for (const key of [
+      "wp.cloudways_server",
+      "wp.cloudways_clone_template",
+      "wp.cloudways_access",
+      "wp.smtp_configured",
+      "wp.password_protect_removed",
+      "wp.reading_seo_reenable",
+      "elementor.global_colors",
+      "elementor.global_fonts",
+      "elementor.global_layout",
+    ]) {
+      expect(keys.has(key)).toBe(true);
+    }
+
+    // forms explicitly wait on SMTP being configured, not just built
+    expect(
+      result.dependencies.some(
+        (d) => d.taskCanonicalKey === "elementor.forms" && d.dependsOnCanonicalKey === "wp.smtp_configured"
+      )
+    ).toBe(true);
+
+    // Cloudways setup happens before WordPress core is "installed"
+    const order = new Map(result.tasks.map((t, i) => [t.canonicalKey, i]));
+    expect(order.get("wp.cloudways_access")!).toBeLessThan(order.get("wp.install")!);
+    // launch-day re-indexing happens after password protection is removed
+    expect(order.get("wp.password_protect_removed")!).toBeLessThan(order.get("wp.reading_seo_reenable")!);
+
+    // no dangling edges
+    for (const dep of result.dependencies) {
+      expect(keys.has(dep.taskCanonicalKey)).toBe(true);
+      expect(keys.has(dep.dependsOnCanonicalKey)).toBe(true);
+    }
+  });
+
   it("GA4 install is dropped (dangling dependency) when GTM is not selected", () => {
     const result = generateWorkflow(["ga4"]);
     const install = result.tasks.find((t) => t.canonicalKey === "analytics.ga4.install");

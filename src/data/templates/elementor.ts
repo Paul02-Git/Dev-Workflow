@@ -20,33 +20,76 @@ export const elementorTemplate: TemplateDef = {
       dependsOn: ["elementor.install"],
       priority: "HIGH",
     },
+    // --- Global settings (Site Settings) --------------------------------
     {
-      canonicalKey: "elementor.global_styles",
+      canonicalKey: "elementor.global_colors",
       stage: "design",
-      title: "Configure global colors & fonts",
+      title: "Configure global color palette",
+      dependsOn: ["elementor.install"],
+      priority: "HIGH",
+      subtasks: [
+        "Primary, secondary, text, and accent colors set from the approved palette",
+        "Colors named descriptively, not left as 'Color 1/2/3'",
+      ],
+    },
+    {
+      canonicalKey: "elementor.global_fonts",
+      stage: "design",
+      title: "Configure global fonts",
+      dependsOn: ["elementor.install"],
+      priority: "HIGH",
+      subtasks: [
+        "Primary (heading) and secondary (body) font families set",
+        "Fallback font stack configured",
+        "Font weights match the design system",
+      ],
+    },
+    {
+      canonicalKey: "elementor.global_layout",
+      stage: "design",
+      title: "Configure global layout defaults",
+      description: "Site Settings > Layout — content width, default section padding, space between widgets, breakpoints.",
       dependsOn: ["elementor.install"],
       priority: "MEDIUM",
+      subtasks: [
+        "Content/container width set",
+        "Default section padding set",
+        "Space between widgets set",
+        "Custom breakpoints configured if the design needs more than Elementor's defaults",
+      ],
     },
     {
       canonicalKey: "elementor.site_identity",
       stage: "design",
       title: "Configure site identity",
-      dependsOn: ["elementor.global_styles"],
+      description: "Logo, favicon, site name — Site Settings > Site Identity.",
+      dependsOn: ["elementor.global_colors", "elementor.global_fonts"],
       priority: "MEDIUM",
     },
+    // --- Theme Builder ---------------------------------------------------
     {
       canonicalKey: "elementor.header",
       stage: "development",
-      title: "Build header (Theme Builder)",
-      dependsOn: ["elementor.global_styles"],
+      title: "Build header template (Theme Builder)",
+      dependsOn: ["elementor.global_layout", "elementor.site_identity"],
       priority: "HIGH",
+      subtasks: [
+        "Logo, nav menu, and CTA placed per the design",
+        "Sticky header behavior set if required",
+        "Mobile menu/hamburger configured",
+        "Display condition set to Entire Site",
+      ],
     },
     {
       canonicalKey: "elementor.footer",
       stage: "development",
-      title: "Build footer (Theme Builder)",
-      dependsOn: ["elementor.global_styles"],
+      title: "Build footer template (Theme Builder)",
+      dependsOn: ["elementor.global_layout", "elementor.site_identity"],
       priority: "HIGH",
+      subtasks: [
+        "Nav columns, contact info, and legal links placed per the design",
+        "Display condition set to Entire Site",
+      ],
     },
     {
       canonicalKey: "elementor.reusable_templates",
@@ -58,7 +101,7 @@ export const elementorTemplate: TemplateDef = {
     {
       canonicalKey: "elementor.responsive_breakpoints",
       stage: "development",
-      title: "Configure responsive breakpoints",
+      title: "Verify responsive breakpoints across all templates",
       dependsOn: ["elementor.reusable_templates"],
       priority: "MEDIUM",
     },
@@ -66,8 +109,10 @@ export const elementorTemplate: TemplateDef = {
       canonicalKey: "elementor.forms",
       stage: "development",
       title: "Build & configure forms",
-      dependsOn: ["elementor.reusable_templates"],
+      description: "Form submissions are only as good as their delivery — confirm SMTP is wired up before calling forms done.",
+      dependsOn: ["elementor.reusable_templates", "wp.smtp_configured"],
       priority: "HIGH",
+      isCritical: true,
     },
     {
       canonicalKey: "elementor.popups",
@@ -83,6 +128,7 @@ export const elementorTemplate: TemplateDef = {
       dependsOn: ["elementor.reusable_templates"],
       priority: "MEDIUM",
     },
+    // --- Visual QA -------------------------------------------------------
     {
       canonicalKey: "qa.visual.desktop",
       stage: "qa",

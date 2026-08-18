@@ -20,7 +20,7 @@ export default async function NewProjectPage({
         stage/task list for you on submit.
       </p>
 
-      <form action={createProjectAction} className="space-y-6 rounded-xl border border-black/10 bg-[#fcfcfb] p-6">
+      <form action={createProjectAction} className="space-y-6 rounded-xl border border-border bg-card p-6">
         <ClientPicker clients={clients} defaultClientId={clientId} />
 
         <div>
@@ -58,17 +58,17 @@ export default async function NewProjectPage({
             {TECHNOLOGIES.map((tech) => (
               <label
                 key={tech.key}
-                className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm hover:bg-[#f9f9f7]"
+                className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
               >
-                <input type="checkbox" name="technologies" value={tech.key} className="accent-[#2a78d6]" />
+                <input type="checkbox" name="technologies" value={tech.key} className="accent-primary" />
                 <span>
                   {tech.name}
-                  <span className="ml-1 text-[11px] text-[#898781]">({tech.category})</span>
+                  <span className="ml-1 text-[11px] text-muted-foreground">({tech.category})</span>
                 </span>
               </label>
             ))}
           </div>
-          <p className="mt-2 text-xs text-[#898781]">
+          <p className="mt-2 text-xs text-muted-foreground">
             Discovery, general QA/security, and Handoff tasks are always included regardless of what
             you select here.
           </p>
@@ -76,7 +76,7 @@ export default async function NewProjectPage({
 
         <button
           type="submit"
-          className="w-full rounded-md bg-[#2a78d6] py-2.5 text-sm font-semibold text-white"
+          className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
         >
           Generate workflow →
         </button>

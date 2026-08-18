@@ -6,16 +6,11 @@ export const gtmTemplate: TemplateDef = {
   technologyKey: "gtm",
   tasks: [
     {
-      canonicalKey: "access.gtm",
-      stage: "access_credentials",
-      title: "Confirm Google Tag Manager access",
-      priority: "HIGH",
-    },
-    {
       canonicalKey: "tracking.gtm.container_created",
       stage: "integrations",
-      title: "Create/select GTM container",
-      dependsOn: ["access.gtm"],
+      title: "Create GTM container",
+      description: "Created under the agency Google account during the build.",
+      dependsOn: ["discovery.scope_confirmed"],
       priority: "HIGH",
     },
     {
@@ -54,6 +49,14 @@ export const gtmTemplate: TemplateDef = {
       title: "Verify GTM firing correctly in production",
       dependsOn: ["tracking.gtm.published"],
       priority: "HIGH",
+    },
+    {
+      canonicalKey: "handoff.gtm_ownership",
+      stage: "handoff",
+      title: "Add client as GTM container user",
+      description: "Grant the client's Google account Publish/Edit access to the container built under the agency account.",
+      dependsOn: ["tracking.gtm.production_verification"],
+      priority: "MEDIUM",
     },
   ],
 };

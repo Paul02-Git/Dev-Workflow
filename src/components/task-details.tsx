@@ -7,10 +7,15 @@ import {
   removeTaskTagAction,
   addTaskAttachmentAction,
   removeTaskAttachmentAction,
+  uploadTaskAttachmentAction,
+  setTaskWaitingOnClientAction,
 } from "@/lib/actions";
 
 type Tag = { id: string; name: string };
-type Attachment = { id: string; url: string; label: string | null };
+// url here is always a ready-to-use link — resolved server-side (signed URL
+// for uploaded files, verbatim for pasted external links) before this
+// component ever sees it.
+type Attachment = { id: string; url: string | null; label: string | null };
 
 function toDateInputValue(date: Date | string | null): string {
   if (!date) return "";
@@ -25,6 +30,7 @@ export function TaskDetailsToggle({
   assignee,
   tags,
   attachments,
+  isWaitingOnClient,
 }: {
   taskId: string;
   notes: string | null;
@@ -32,16 +38,22 @@ export function TaskDetailsToggle({
   assignee: string | null;
   tags: Tag[];
   attachments: Attachment[];
+  isWaitingOnClient?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const hasDetails = !!notes || !!dueDate || !!assignee || tags.length > 0 || attachments.length > 0;
+  const hasDetails = !!notes || !!dueDate || !!assignee || tags.length > 0 || attachments.length > 0 || !!isWaitingOnClient;
 
   return (
     <div>
+      {isWaitingOnClient && (
+        <span className="mr-1.5 rounded-full bg-[#fef4de] px-1.5 py-0.5 text-[10px] font-bold text-[#8a5c00]">
+          WAITING ON CLIENT
+        </span>
+      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] font-medium text-[#2a78d6] hover:underline"
+        className="text-[11px] font-medium text-primary hover:underline"
       >
         {open ? "Hide details" : hasDetails ? "Details •" : "Add details"}
       </button>
@@ -53,6 +65,7 @@ export function TaskDetailsToggle({
           assignee={assignee}
           tags={tags}
           attachments={attachments}
+          isWaitingOnClient={!!isWaitingOnClient}
         />
       )}
     </div>
@@ -66,6 +79,7 @@ function TaskDetailsPanel({
   assignee,
   tags,
   attachments,
+  isWaitingOnClient,
 }: {
   taskId: string;
   notes: string | null;
@@ -73,18 +87,32 @@ function TaskDetailsPanel({
   assignee: string | null;
   tags: Tag[];
   attachments: Attachment[];
+  isWaitingOnClient: boolean;
 }) {
   const [, startTransition] = useTransition();
   const [notesValue, setNotesValue] = useState(notes ?? "");
   const [newTag, setNewTag] = useState("");
   const [newAttachmentUrl, setNewAttachmentUrl] = useState("");
   const [newAttachmentLabel, setNewAttachmentLabel] = useState("");
+  const [waiting, setWaiting] = useState(isWaitingOnClient);
 
   return (
-    <div className="mt-2 space-y-3 rounded-md border border-black/10 bg-white p-3">
+    <div className="mt-2 space-y-3 rounded-md border border-border bg-white p-3">
+      <label className="flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={waiting}
+          onChange={(e) => {
+            setWaiting(e.target.checked);
+            startTransition(() => setTaskWaitingOnClientAction(taskId, e.target.checked));
+          }}
+        />
+        Waiting on client
+      </label>
+
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold text-[#898781]">Due date</span>
+          <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Due date</span>
           <input
             type="date"
             defaultValue={toDateInputValue(dueDate)}
@@ -95,7 +123,7 @@ function TaskDetailsPanel({
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-[10px] font-semibold text-[#898781]">Assignee</span>
+          <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Assignee</span>
           <input
             type="text"
             defaultValue={assignee ?? ""}
@@ -109,7 +137,7 @@ function TaskDetailsPanel({
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-[10px] font-semibold text-[#898781]">Notes</span>
+        <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Notes</span>
         <textarea
           value={notesValue}
           onChange={(e) => setNotesValue(e.target.value)}
@@ -120,7 +148,7 @@ function TaskDetailsPanel({
       </label>
 
       <div>
-        <span className="mb-1 block text-[10px] font-semibold text-[#898781]">Tags</span>
+        <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Tags</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {tags.map((tag) => (
             <span
@@ -156,22 +184,26 @@ function TaskDetailsPanel({
       </div>
 
       <div>
-        <span className="mb-1 block text-[10px] font-semibold text-[#898781]">Attachments</span>
+        <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Attachments</span>
         <div className="space-y-1">
           {attachments.map((a) => (
             <div key={a.id} className="flex items-center gap-2 text-xs">
-              <a
-                href={a.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-[#2a78d6] hover:underline"
-              >
-                {a.label || a.url}
-              </a>
+              {a.url ? (
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-primary hover:underline"
+                >
+                  {a.label || a.url}
+                </a>
+              ) : (
+                <span className="truncate text-muted-foreground">{a.label || "(link unavailable)"}</span>
+              )}
               <button
                 type="button"
                 onClick={() => startTransition(() => removeTaskAttachmentAction(a.id))}
-                className="text-[#898781] hover:text-[#d03b3b]"
+                className="text-muted-foreground hover:text-[#d03b3b]"
                 aria-label="Remove attachment"
               >
                 ×
@@ -207,6 +239,28 @@ function TaskDetailsPanel({
             Add
           </button>
         </div>
+        <form
+          action={uploadTaskAttachmentAction}
+          className="mt-1.5 flex items-center gap-1.5"
+          onSubmit={(e) => {
+            // Clear the file input right after the browser has read it into
+            // FormData — otherwise the same filename can't be re-selected later.
+            const form = e.currentTarget;
+            requestAnimationFrame(() => form.reset());
+          }}
+        >
+          <input type="hidden" name="taskId" value={taskId} />
+          <input
+            type="file"
+            name="file"
+            required
+            accept="image/*,video/*,application/pdf,text/plain"
+            className="flex-1 text-[10px]"
+          />
+          <button type="submit" className="rounded border border-black/15 px-2 text-[10px] font-medium">
+            Upload
+          </button>
+        </form>
       </div>
     </div>
   );

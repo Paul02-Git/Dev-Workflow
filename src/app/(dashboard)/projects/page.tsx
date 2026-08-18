@@ -19,27 +19,27 @@ export default async function ProjectsPage() {
         </div>
         <Link
           href="/projects/new"
-          className="rounded-md bg-[#2a78d6] px-4 py-2 text-sm font-semibold text-white"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
         >
           + New project
         </Link>
       </div>
 
-      <div className="divide-y divide-black/10 rounded-xl border border-black/10 bg-[#fcfcfb]">
+      <div className="divide-y divide-border rounded-xl border border-border bg-card">
         {projects.length === 0 && (
-          <div className="p-5 text-sm text-[#898781]">
-            No projects yet. <Link href="/projects/new" className="text-[#2a78d6]">Create one</Link>.
+          <div className="p-5 text-sm text-muted-foreground">
+            No projects yet. <Link href="/projects/new" className="text-primary">Create one</Link>.
           </div>
         )}
         {projects.map((p) => (
           <Link
             key={p.id}
             href={`/projects/${p.id}`}
-            className="flex items-center justify-between px-5 py-3 text-sm hover:bg-[#f9f9f7]"
+            className="flex items-center justify-between px-5 py-3 text-sm hover:bg-muted"
           >
             <div>
               <div className="font-medium">{p.name}</div>
-              <div className="text-xs text-[#898781]">
+              <div className="text-xs text-muted-foreground">
                 {p.clientName} · {p.projectType}
               </div>
             </div>

@@ -7,7 +7,7 @@ const STATUSES = ["TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE", "SKIPPED"]
 
 export const STATUS_COLORS: Record<string, string> = {
   TODO: "#898781",
-  IN_PROGRESS: "#2a78d6",
+  IN_PROGRESS: "var(--primary)",
   BLOCKED: "#d03b3b",
   REVIEW: "#eda100",
   DONE: "#0ca30c",
@@ -34,7 +34,7 @@ export function TaskStatusSelect({
         </span>
       )}
       <select
-        defaultValue={status}
+        value={status}
         disabled={pending}
         onChange={(e) => startTransition(() => updateTaskStatusAction(taskId, e.target.value))}
         style={{ color: STATUS_COLORS[status] }}

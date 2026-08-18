@@ -46,21 +46,21 @@ export default async function ReportsPage() {
       </p>
 
       <div className="mb-8 grid grid-cols-4 gap-4">
-        <div className="rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs font-semibold text-[#52514e]">Avg health</div>
           <div className="text-2xl font-bold" style={{ color: healthColor(avgHealth) }}>
             {avgHealth}%
           </div>
         </div>
-        <div className="rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs font-semibold text-[#52514e]">Critical, open</div>
           <div className="text-2xl font-bold text-[#d03b3b]">{criticalOpen}</div>
         </div>
-        <div className="rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs font-semibold text-[#52514e]">Blocked</div>
           <div className="text-2xl font-bold text-[#eda100]">{blocked}</div>
         </div>
-        <div className="rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="text-xs font-semibold text-[#52514e]">Overdue</div>
           <div className="text-2xl font-bold text-[#d03b3b]">{overdue}</div>
         </div>
@@ -69,7 +69,7 @@ export default async function ReportsPage() {
       <div className="mb-8 grid grid-cols-2 gap-6">
         <div>
           <h2 className="mb-2 text-sm font-semibold">Tasks by status</h2>
-          <div className="space-y-1.5 rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+          <div className="space-y-1.5 rounded-xl border border-border bg-card p-4">
             {Object.entries(statusCounts).map(([status, count]) => (
               <div key={status} className="flex items-center justify-between text-sm">
                 <span className="text-[#52514e]">{status.replace("_", " ")}</span>
@@ -80,7 +80,7 @@ export default async function ReportsPage() {
         </div>
         <div>
           <h2 className="mb-2 text-sm font-semibold">Tasks by priority</h2>
-          <div className="space-y-1.5 rounded-xl border border-black/10 bg-[#fcfcfb] p-4">
+          <div className="space-y-1.5 rounded-xl border border-border bg-card p-4">
             {Object.entries(priorityCounts).map(([priority, count]) => (
               <div key={priority} className="flex items-center justify-between text-sm">
                 <span className="text-[#52514e]">{priority}</span>
@@ -92,11 +92,11 @@ export default async function ReportsPage() {
       </div>
 
       <h2 className="mb-2 text-sm font-semibold">Health by client</h2>
-      <div className="divide-y divide-black/10 rounded-xl border border-black/10 bg-[#fcfcfb]">
+      <div className="divide-y divide-border rounded-xl border border-border bg-card">
         {Array.from(byClient.entries()).map(([clientName, stat]) => (
           <div key={clientName} className="flex items-center justify-between px-5 py-3 text-sm">
             <span>
-              {clientName} <span className="text-[#898781]">· {stat.count} project(s)</span>
+              {clientName} <span className="text-muted-foreground">· {stat.count} project(s)</span>
             </span>
             <span className="font-semibold" style={{ color: healthColor(Math.round(stat.avgHealth)) }}>
               {Math.round(stat.avgHealth)}%

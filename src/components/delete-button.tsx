@@ -32,7 +32,7 @@ export function DeleteButton({ action, label = "Delete" }: { action: () => Promi
       <button
         type="button"
         onClick={() => setConfirming(false)}
-        className="text-xs text-[#898781] hover:underline"
+        className="text-xs text-muted-foreground hover:underline"
       >
         Cancel
       </button>

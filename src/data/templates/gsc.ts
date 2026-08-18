@@ -6,23 +6,19 @@ export const gscTemplate: TemplateDef = {
   technologyKey: "gsc",
   tasks: [
     {
-      canonicalKey: "access.gsc",
-      stage: "access_credentials",
-      title: "Confirm Google Search Console access",
-      priority: "HIGH",
-    },
-    {
       canonicalKey: "seo.gsc.add_property",
       stage: "seo",
-      title: "Add property in GSC",
-      dependsOn: ["access.gsc"],
+      title: "Add property in Google Search Console",
+      description: "Created under the agency Google account during the build.",
+      dependsOn: ["discovery.scope_confirmed"],
       priority: "HIGH",
     },
     {
       canonicalKey: "seo.gsc.verify_ownership",
       stage: "seo",
       title: "Verify site ownership",
-      dependsOn: ["seo.gsc.add_property"],
+      description: "DNS TXT record verification, straightforward when the domain sits in the agency GoDaddy account; otherwise needs registrar access from the client.",
+      dependsOn: ["seo.gsc.add_property", "access.domain_registrar"],
       priority: "CRITICAL",
       isCritical: true,
     },
@@ -69,6 +65,14 @@ export const gscTemplate: TemplateDef = {
       dependsOn: ["seo.gsc.check_indexing"],
       priority: "HIGH",
       isCritical: true,
+    },
+    {
+      canonicalKey: "handoff.gsc_ownership",
+      stage: "handoff",
+      title: "Add client as GSC owner",
+      description: "Grant the client's Google account Owner access to the property built under the agency account.",
+      dependsOn: ["seo.gsc.pages_indexed"],
+      priority: "MEDIUM",
     },
   ],
 };

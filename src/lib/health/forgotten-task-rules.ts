@@ -109,6 +109,30 @@ const RULES: Rule[] = [
     }
     return null;
   },
+  (lookup) => {
+    const passwordRemoved = lookup.status("wp.password_protect_removed");
+    const seoReenabled = lookup.status("wp.reading_seo_reenable");
+    if (isDone(passwordRemoved) && !isDone(seoReenabled)) {
+      return {
+        id: "wp_search_engines_still_discouraged",
+        area: "Launch",
+        message: "Site is public but still discouraging search engines from indexing it.",
+      };
+    }
+    return null;
+  },
+  (lookup) => {
+    const formsBuilt = lookup.status("elementor.forms");
+    const smtpConfigured = lookup.status("wp.smtp_configured");
+    if (isDone(formsBuilt) && !isDone(smtpConfigured)) {
+      return {
+        id: "wp_forms_smtp_unconfigured",
+        area: "Development",
+        message: "Forms are built but SMTP isn't configured — submissions may not be delivering.",
+      };
+    }
+    return null;
+  },
 ];
 
 export function checkProject(lookup: TaskLookup): ForgottenTaskIssue[] {

@@ -32,11 +32,11 @@ export default async function QaPage() {
           <div key={projectId} className="mb-6">
             <div className="mb-2 flex items-center justify-between">
               <Link href={`/projects/${projectId}`} className="text-sm font-semibold hover:underline">
-                {first.projectName} <span className="font-normal text-[#898781]">· {first.clientName}</span>
+                {first.projectName} <span className="font-normal text-muted-foreground">· {first.clientName}</span>
               </Link>
-              <span className="text-xs text-[#898781]">{openCount} open</span>
+              <span className="text-xs text-muted-foreground">{openCount} open</span>
             </div>
-            <div className="divide-y divide-black/10 rounded-xl border border-black/10 bg-[#fcfcfb]">
+            <div className="divide-y divide-border rounded-xl border border-border bg-card">
               {projectTasks.map((t) => (
                 <div
                   key={t.id}
@@ -66,7 +66,7 @@ export default async function QaPage() {
       })}
 
       {byProject.size === 0 && (
-        <div className="rounded-xl border border-black/10 bg-[#fcfcfb] p-5 text-sm text-[#898781]">
+        <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
           No QA tasks generated yet — QA tasks appear once a project has been created.
         </div>
       )}

@@ -6,16 +6,11 @@ export const clarityTemplate: TemplateDef = {
   technologyKey: "clarity",
   tasks: [
     {
-      canonicalKey: "access.clarity",
-      stage: "access_credentials",
-      title: "Confirm Microsoft Clarity access",
-      priority: "MEDIUM",
-    },
-    {
       canonicalKey: "tracking.clarity.project",
       stage: "analytics_tracking",
-      title: "Create/select Clarity project",
-      dependsOn: ["access.clarity"],
+      title: "Create Clarity project",
+      description: "Created under the agency Microsoft account during the build.",
+      dependsOn: ["discovery.scope_confirmed"],
       priority: "MEDIUM",
     },
     {
@@ -46,6 +41,14 @@ export const clarityTemplate: TemplateDef = {
       dependsOn: ["tracking.clarity.verify_recordings", "tracking.gtm.published"],
       priority: "HIGH",
       isCritical: true,
+    },
+    {
+      canonicalKey: "handoff.clarity_ownership",
+      stage: "handoff",
+      title: "Add client as Clarity project owner",
+      description: "Grant the client's Microsoft account owner access to the project built under the agency account.",
+      dependsOn: ["tracking.clarity.verify_production"],
+      priority: "LOW",
     },
   ],
 };

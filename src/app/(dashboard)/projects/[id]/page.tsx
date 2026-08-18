@@ -1,24 +1,83 @@
-import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { getProjectDetail } from "@/lib/queries/projects";
-import { TaskStatusSelect } from "@/components/task-status-select";
-import { CheckProjectButton } from "@/components/check-project-button";
-import { TaskDetailsToggle } from "@/components/task-details";
-import { DeleteButton } from "@/components/delete-button";
-import { deleteProjectAction } from "@/lib/actions";
+import {
+  getProjectDetail,
+  getProjectIssues,
+  listRecentActivity,
+  listWaitingOnClientTasks,
+  listProjectAttachments,
+  getLastHandoffView,
+  type ProjectPulseSummary,
+} from "@/lib/queries/projects";
+import { listAccessItems } from "@/lib/queries/access-items";
+import { listMaintenancePlansForProject } from "@/lib/queries/maintenance";
+import { getSignedAttachmentUrl } from "@/lib/storage";
+import { ProjectOverviewForm } from "@/components/project-overview-form";
+import { AccessItemsPanel } from "@/components/access-items-panel";
+import { ProjectHeader } from "@/components/project-header";
+import { ProjectPulseCards } from "@/components/project-pulse-cards";
+import { HandoffLinkPanel } from "@/components/handoff-link-panel";
+import { ProjectTimeline } from "@/components/project-timeline";
+import { NextActionsCard } from "@/components/next-actions-card";
+import { LaunchChecklistCard } from "@/components/launch-checklist-card";
+import { LaunchChecklistDetail } from "@/components/launch-checklist-detail";
+import { WaitingOnClientCard } from "@/components/waiting-on-client-card";
+import { RecentActivityCard } from "@/components/recent-activity-card";
+import { ProjectTabs } from "@/components/project-tabs";
+import { TaskStageBoard } from "@/components/task-stage-board";
+import { FilesTab } from "@/components/files-tab";
+import { NotesTab } from "@/components/notes-tab";
+import { ActivityTab } from "@/components/activity-tab";
+import { SettingsTab } from "@/components/settings-tab";
+import { STAGES } from "@/data/stages";
 
-function healthColor(score: number) {
-  if (score >= 85) return "#0ca30c";
-  if (score >= 60) return "#fab219";
-  return "#d03b3b";
-}
+const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const detail = await getProjectDetail(id);
+  const [
+    detail,
+    accessItems,
+    issues,
+    recentActivity,
+    fullActivity,
+    waitingOnClientTasks,
+    allFiles,
+    maintenancePlans,
+    lastHandoffView,
+  ] = await Promise.all([
+    getProjectDetail(id),
+    listAccessItems(id),
+    getProjectIssues(id),
+    listRecentActivity(id, 3),
+    listRecentActivity(id, 500),
+    listWaitingOnClientTasks(id),
+    listProjectAttachments(id),
+    listMaintenancePlansForProject(id),
+    getLastHandoffView(id),
+  ]);
   if (!detail) notFound();
 
-  const { project, client, stages, tasks } = detail;
+  const { project, client, stages, technologies } = detail;
+  // Uploaded files live in a private bucket — resolve each to a fresh
+  // signed URL (1hr expiry) at render time; pasted external links pass through.
+  const tasks = await Promise.all(
+    detail.tasks.map(async (t) => ({
+      ...t,
+      attachments: await Promise.all(
+        t.attachments.map(async (a) => ({
+          ...a,
+          url: a.storagePath ? await getSignedAttachmentUrl(a.storagePath) : a.url,
+        }))
+      ),
+    }))
+  );
+  const projectFiles = await Promise.all(
+    allFiles.map(async (f) => ({
+      ...f,
+      url: f.storagePath ? await getSignedAttachmentUrl(f.storagePath) : f.url,
+    }))
+  );
   const tasksByStage = new Map<string, typeof tasks>();
   for (const stage of stages) tasksByStage.set(stage.id, []);
   for (const task of tasks) {
@@ -35,142 +94,189 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const criticalTasks = tasks.filter((t) => t.isCritical);
   const criticalDone = criticalTasks.filter((t) => t.effectiveStatus === "DONE").length;
   const launchReady = criticalTasks.length > 0 && criticalDone === criticalTasks.length;
+  const criticalTasksWithStage = criticalTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    effectiveStatus: t.effectiveStatus,
+    stageName: stages.find((s) => s.id === t.stageId)?.name ?? "",
+  }));
+
+  // --- Header stats ---
+  const daysToLaunch = project.targetLaunchDate
+    ? Math.round((new Date(project.targetLaunchDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    : null;
+  const topLevelTasks = tasks.filter((t) => !t.parentTaskId);
+  const tasksDone = topLevelTasks.filter((t) => t.effectiveStatus === "DONE").length;
+  const tasksTotal = topLevelTasks.length;
+
+  // --- Timeline: derived from existing stages/tasks, no new data model ---
+  const timelineStages = stages
+    .map((stage) => {
+      const stageTasks = tasks.filter((t) => t.stageId === stage.id);
+      const done = stageTasks.length > 0 && stageTasks.every((t) => t.effectiveStatus === "DONE" || t.effectiveStatus === "SKIPPED");
+      return { id: stage.id, name: stage.name, taskCount: stageTasks.length, done };
+    })
+    .filter((s) => s.taskCount > 0);
+  const firstIncompleteIndex = timelineStages.findIndex((s) => !s.done);
+  const timelineWithStatus = timelineStages.map((s, i) => ({
+    id: s.id,
+    name: s.name,
+    status: (s.done ? "done" : i === firstIncompleteIndex ? "current" : "pending") as "done" | "current" | "pending",
+  }));
+  const currentStage = timelineWithStatus.find((s) => s.status === "current");
+  // Includes subtasks, matching the same task set the "current" determination
+  // above is based on — a top-level-only count could disagree with it.
+  const currentStageTasksAll = currentStage ? tasks.filter((t) => t.stageId === currentStage.id) : [];
+  const currentStageDone = currentStageTasksAll.filter(
+    (t) => t.effectiveStatus === "DONE" || t.effectiveStatus === "SKIPPED"
+  ).length;
+  const milestoneName = currentStage ? currentStage.name : timelineWithStatus.length > 0 ? "All stages complete" : null;
+  const milestonePercent = currentStage
+    ? currentStageTasksAll.length > 0
+      ? Math.round((currentStageDone / currentStageTasksAll.length) * 100)
+      : 0
+    : timelineWithStatus.length > 0
+      ? 100
+      : null;
+
+  const pulseSummary: ProjectPulseSummary = {
+    id: project.id,
+    name: project.name,
+    clientName: client?.name ?? "—",
+    healthScore: detail.healthScore,
+    tasksDone,
+    tasksTotal,
+    issues: issues.map((i) => ({ id: i.id, message: i.message })),
+    milestoneName,
+    milestonePercent,
+    daysToLaunch,
+  };
+
+  // --- Next actions: this project's actionable top-level tasks, same ranking as the dashboard's cross-project version ---
+  const nextActions = topLevelTasks
+    .filter((t) => t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED" && t.effectiveStatus !== "BLOCKED")
+    .sort((a, b) => {
+      if (a.isCritical !== b.isCritical) return a.isCritical ? -1 : 1;
+      return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
+    })
+    .slice(0, 3)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      isCritical: t.isCritical,
+      priority: t.priority,
+      stageName: stages.find((s) => s.id === t.stageId)?.name ?? "",
+    }));
+
+  const commandCenterContent = (
+    <>
+      <div className="mb-4">
+        <ProjectTimeline stages={timelineWithStatus} />
+      </div>
+
+      <div className="mb-4">
+        <ProjectPulseCards summary={pulseSummary} />
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 items-stretch gap-3 lg:grid-cols-3">
+        <div className="flex h-full flex-col gap-3">
+          <ProjectOverviewForm
+            projectId={project.id}
+            domain={project.domain}
+            targetLaunchDate={project.targetLaunchDate}
+            daysToLaunch={daysToLaunch}
+            healthScore={detail.healthScore}
+            healthUpdatedAt={project.updatedAt}
+            tasksDone={tasksDone}
+            tasksTotal={tasksTotal}
+            lastActivityAt={recentActivity[0]?.createdAt ?? null}
+            lastActivityActor={recentActivity[0]?.actorName ?? null}
+          />
+          <NextActionsCard projectId={project.id} tasks={nextActions} />
+          <div className="flex-1">
+            <RecentActivityCard projectId={project.id} activity={recentActivity} />
+          </div>
+        </div>
+        <AccessItemsPanel projectId={project.id} items={accessItems} />
+        <div className="flex h-full flex-col gap-3">
+          <div className="flex-1">
+            <LaunchChecklistCard projectId={project.id} tasks={criticalTasksWithStage} />
+          </div>
+          <HandoffLinkPanel projectId={project.id} token={project.handoffToken} lastViewedAt={lastHandoffView} />
+        </div>
+      </div>
+
+      <WaitingOnClientCard tasks={waitingOnClientTasks} />
+    </>
+  );
+
+  // "Tasks" is scoped to what's actually being built — QA gets its own tab
+  // so it doesn't read as "one more build task" mixed into the same list.
+  const buildStages = stages.filter((s) => s.key !== "qa");
+  const qaStages = stages.filter((s) => s.key === "qa");
+  const openTopLevel = (stageIds: Set<string>) =>
+    topLevelTasks.filter(
+      (t) => stageIds.has(t.stageId) && t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED"
+    ).length;
+  const buildTasksRemaining = openTopLevel(new Set(buildStages.map((s) => s.id)));
+  const qaTaskCount = openTopLevel(new Set(qaStages.map((s) => s.id)));
+
+  const tasksContent = (
+    <>
+      <LaunchChecklistDetail tasks={criticalTasksWithStage} />
+      <TaskStageBoard stages={buildStages} tasksByStage={tasksByStage} subtasksByParent={subtasksByParent} />
+    </>
+  );
+
+  const qaContent =
+    qaStages.length === 0 || (tasksByStage.get(qaStages[0].id) ?? []).length === 0 ? (
+      <p className="text-sm text-muted-foreground">No QA tasks yet — they land here once the QA stage has any.</p>
+    ) : (
+      <TaskStageBoard stages={qaStages} tasksByStage={tasksByStage} subtasksByParent={subtasksByParent} />
+    );
+
+  const filesContent = <FilesTab projectId={project.id} files={projectFiles} />;
+  const notesContent = <NotesTab projectId={project.id} notes={project.notes} />;
+  const activityTabContent = <ActivityTab activity={fullActivity} />;
+  const settingsContent = (
+    <SettingsTab
+      projectId={project.id}
+      projectName={project.name}
+      clientName={client?.name ?? ""}
+      technologies={technologies}
+      maintenancePlans={maintenancePlans}
+    />
+  );
 
   return (
-    <div className="max-w-4xl">
-      <div className="flex items-center justify-between">
-        <Link href="/projects" className="text-xs font-medium text-[#2a78d6]">
-          ← All projects
-        </Link>
-        <DeleteButton action={deleteProjectAction.bind(null, project.id)} label="Delete project" />
-      </div>
+    <div className="w-full">
+      <ProjectHeader
+        projectId={project.id}
+        projectName={project.name}
+        projectType={project.projectType}
+        status={project.status}
+        clientId={client?.id ?? ""}
+        clientName={client?.name ?? "—"}
+        handoffToken={project.handoffToken}
+        launchedAt={project.launchedAt}
+        launchReady={launchReady}
+        healthScore={detail.healthScore}
+        stages={STAGES}
+      />
 
-      <div className="mt-2 mb-4 flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{project.name}</h1>
-          <p className="text-sm text-[#52514e]">
-            {client?.name} · {project.projectType}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold" style={{ color: healthColor(detail.healthScore) }}>
-            {detail.healthScore}%
-          </div>
-          <div className="text-[11px] font-semibold text-[#898781]">Project health</div>
-        </div>
-      </div>
-
-      <div className="mb-6 flex items-center justify-between rounded-lg border border-black/10 bg-[#fcfcfb] p-4">
-        <div className="text-sm">
-          <span className="font-semibold">Launch readiness: </span>
-          {criticalTasks.length === 0 ? (
-            <span className="text-[#898781]">no critical tasks yet</span>
-          ) : (
-            <span>
-              {criticalDone}/{criticalTasks.length} critical tasks done —{" "}
-              {launchReady ? (
-                <span className="font-semibold text-[#006300]">Ready for Launch</span>
-              ) : (
-                <span className="font-semibold text-[#d03b3b]">Not ready</span>
-              )}
-            </span>
-          )}
-        </div>
-        <CheckProjectButton projectId={project.id} />
-      </div>
-
-      <div className="space-y-6">
-        {stages.map((stage) => {
-          const stageTasks = tasksByStage.get(stage.id) ?? [];
-          if (stageTasks.length === 0) return null;
-          return (
-            <div key={stage.id}>
-              <h2 className="mb-2 text-sm font-semibold text-[#52514e]">{stage.name}</h2>
-              <div className="divide-y divide-black/10 rounded-lg border border-black/10 bg-[#fcfcfb]">
-                {stageTasks.map((task) => (
-                  <div key={task.id}>
-                    <div
-                      className={`flex items-center justify-between gap-3 px-4 py-3 ${
-                        task.effectiveStatus === "DONE" ? "bg-[#eafaea]" : ""
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          {task.title}
-                          {task.isCritical && (
-                            <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-[10px] font-bold text-[#d03b3b]">
-                              CRITICAL
-                            </span>
-                          )}
-                        </div>
-                        {task.description && (
-                          <div className="text-xs text-[#898781]">{task.description}</div>
-                        )}
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          {task.dueDate && (
-                            <span
-                              className={`text-[10px] font-medium ${
-                                new Date(task.dueDate) < new Date() && task.effectiveStatus !== "DONE"
-                                  ? "text-[#d03b3b]"
-                                  : "text-[#898781]"
-                              }`}
-                            >
-                              Due {new Date(task.dueDate).toLocaleDateString()}
-                            </span>
-                          )}
-                          {task.assignee && (
-                            <span className="text-[10px] font-medium text-[#898781]">{task.assignee}</span>
-                          )}
-                          {task.tags.map((tag) => (
-                            <span
-                              key={tag.id}
-                              className="rounded-full bg-[#eef2fb] px-1.5 py-0.5 text-[10px] font-medium text-[#2a4d8f]"
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
-                          <TaskDetailsToggle
-                            taskId={task.id}
-                            notes={task.notes}
-                            dueDate={task.dueDate}
-                            assignee={task.assignee}
-                            tags={task.tags}
-                            attachments={task.attachments}
-                          />
-                        </div>
-                      </div>
-                      <TaskStatusSelect
-                        taskId={task.id}
-                        status={task.status}
-                        effectiveStatus={task.effectiveStatus}
-                      />
-                    </div>
-                    {(subtasksByParent.get(task.id) ?? []).length > 0 && (
-                      <div className="space-y-1 border-t border-black/5 bg-[#f9f9f7] px-4 py-2 pl-8">
-                        {subtasksByParent.get(task.id)!.map((sub) => (
-                          <div
-                            key={sub.id}
-                            className={`flex items-center justify-between gap-3 rounded px-1 ${
-                              sub.effectiveStatus === "DONE" ? "bg-[#eafaea]" : ""
-                            }`}
-                          >
-                            <span className="text-xs text-[#52514e]">— {sub.title}</span>
-                            <TaskStatusSelect
-                              taskId={sub.id}
-                              status={sub.status}
-                              effectiveStatus={sub.effectiveStatus}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <Suspense fallback={null}>
+        <ProjectTabs
+          tabs={[
+            { label: "Command Center", slug: "command-center", content: commandCenterContent },
+            { label: "Tasks", slug: "tasks", badge: buildTasksRemaining, content: tasksContent },
+            { label: "QA", slug: "qa", badge: qaTaskCount, content: qaContent },
+            { label: "Files", slug: "files", badge: projectFiles.length || undefined, content: filesContent },
+            { label: "Notes", slug: "notes", content: notesContent },
+            { label: "Activity", slug: "activity", content: activityTabContent },
+            { label: "Settings", slug: "settings", content: settingsContent },
+          ]}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -13,19 +13,19 @@ export default async function IntegrationsPage() {
     <div className="max-w-5xl">
       <h1 className="mb-1 text-xl font-semibold">Integrations</h1>
       <p className="mb-6 text-sm text-[#52514e]">
-        Which technologies are in use across your projects. This is informational only — there's no live
-        OAuth-synced connection to any of these accounts yet; each project's tasks track setup by hand.
+        Which technologies are in use across your projects. This is informational only — there&apos;s no live
+        OAuth-synced connection to any of these accounts yet; each project&apos;s tasks track setup by hand.
       </p>
 
       {Array.from(byCategory.entries()).map(([category, techs]) => (
         <div key={category} className="mb-6">
           <h2 className="mb-2 text-sm font-semibold text-[#52514e]">{category}</h2>
-          <div className="divide-y divide-black/10 rounded-xl border border-black/10 bg-[#fcfcfb]">
+          <div className="divide-y divide-border rounded-xl border border-border bg-card">
             {techs.map((t) => (
               <div key={t.id} className="flex items-center justify-between px-5 py-3 text-sm">
                 <span className="font-medium">{t.name}</span>
                 {t.projects.length === 0 ? (
-                  <span className="text-xs text-[#898781]">Not used yet</span>
+                  <span className="text-xs text-muted-foreground">Not used yet</span>
                 ) : (
                   <span className="flex flex-wrap justify-end gap-1.5">
                     {t.projects.map((p) => (

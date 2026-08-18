@@ -34,10 +34,17 @@ export const taskPriorityEnum = pgEnum("task_priority", [
   "LOW",
 ]);
 
+// Most platforms grant access via invite (add paul@... as a collaborator/
+// admin), not a shared password — this vocabulary tracks that flow.
+// NOT_NEEDED covers e.g. a technology that turned out not to require a
+// separate account for this project.
 export const accessStatusEnum = pgEnum("access_status", [
   "NOT_REQUESTED",
   "REQUESTED",
-  "RECEIVED",
+  "INVITED",
+  "GRANTED",
+  "VERIFIED",
+  "NOT_NEEDED",
 ]);
 
 export const projectStatusEnum = pgEnum("project_status", [
@@ -62,20 +69,35 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const projects = pgTable("projects", {
-  id: cuid(),
-  clientId: text("client_id")
-    .notNull()
-    .references(() => clients.id),
-  name: text("name").notNull(),
-  projectType: text("project_type").notNull(),
-  status: projectStatusEnum("status").notNull().default("ACTIVE"),
-  healthScore: integer("health_score").notNull().default(0),
-  launchReady: boolean("launch_ready").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  launchedAt: timestamp("launched_at"),
-});
+export const projects = pgTable(
+  "projects",
+  {
+    id: cuid(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    name: text("name").notNull(),
+    projectType: text("project_type").notNull(),
+    status: projectStatusEnum("status").notNull().default("ACTIVE"),
+    healthScore: integer("health_score").notNull().default(0),
+    launchReady: boolean("launch_ready").notNull().default(false),
+    domain: text("domain"),
+    targetLaunchDate: timestamp("target_launch_date"),
+    // Bearer token for the public read-only /handoff/[token] page — null
+    // until "Generate handoff link" is clicked. Unguessable (32 random
+    // bytes), not tied to a login — treat it like a share link: anyone
+    // holding it can view.
+    handoffToken: text("handoff_token"),
+    // Freeform scratchpad — "client prefers WhatsApp," "don't launch
+    // Fridays." Not a wiki, not structured; a single field is enough at
+    // solo scale.
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    launchedAt: timestamp("launched_at"),
+  },
+  (t) => [uniqueIndex("project_handoff_token_unique").on(t.handoffToken)]
+);
 
 export const technologies = pgTable("technologies", {
   id: cuid(),
@@ -147,6 +169,11 @@ export const tasks = pgTable(
     dueDate: timestamp("due_date"),
     assignee: text("assignee"),
     notes: text("notes"),
+    // The client, not a dependency or Paul's own backlog, is the blocker.
+    // waitingOnClientSince stamps when it was flagged (cleared on un-flag)
+    // so "oldest waiting" is exact, not inferred from unrelated edits.
+    isWaitingOnClient: boolean("is_waiting_on_client").notNull().default(false),
+    waitingOnClientSince: timestamp("waiting_on_client_since"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -194,10 +221,16 @@ export const taskTags = pgTable(
 
 export const attachments = pgTable("attachments", {
   id: cuid(),
-  taskId: text("task_id")
-    .notNull()
-    .references(() => tasks.id, { onDelete: "cascade" }),
-  url: text("url").notNull(),
+  // Exactly one of taskId / projectId is set: taskId for proof attached to
+  // a specific task (the original use), projectId for a general project
+  // file that isn't tied to any one step (a client's logo, a brand guide).
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  // Exactly one of url / storagePath is set: url for a pasted external link
+  // (Drive, Loom, etc.), storagePath for a file uploaded straight into the
+  // private Supabase Storage "attachments" bucket — see src/lib/storage.ts.
+  url: text("url"),
+  storagePath: text("storage_path"),
   label: text("label"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -209,7 +242,51 @@ export const accessItems = pgTable("access_items", {
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   status: accessStatusEnum("status").notNull().default("NOT_REQUESTED"),
+  url: text("url"),
+  // What role to request / was granted (Administrator, Editor, Owner...).
+  role: text("role"),
+  // What to actually ask the client for — auto-suggested per technology
+  // (see src/data/access-item-presets.ts), editable per project.
+  instructions: text("instructions"),
+  grantedAt: timestamp("granted_at"),
+  username: text("username"),
+  // AES-256-GCM ciphertext (base64), never plaintext — see src/lib/crypto.ts.
+  // Secondary path now: most platforms are invite-based, not credential-
+  // based (see status/role/instructions above) — this covers the real
+  // exceptions (a shared inbox, WP admin before ownership handoff).
+  passwordEncrypted: text("password_encrypted"),
   notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Backs login rate limiting. DB-backed rather than in-memory — an
+// in-memory counter would silently reset on every cold start if this ever
+// runs on a serverless platform (Vercel), which defeats the point.
+export const loginAttempts = pgTable("login_attempts", {
+  id: cuid(),
+  success: boolean("success").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Recurring/retainer maintenance checklists — separate from the one-time
+// build workflow. "Generate this cycle's checklist" materializes
+// checklistTemplate's lines as real tasks under the project's existing
+// post_launch stage, tags them with a dated tag for history, and advances
+// nextDueAt. No real cron runs this; it's surfaced as a due list on the
+// dashboard that Paul triggers by hand.
+export const maintenancePlans = pgTable("maintenance_plans", {
+  id: cuid(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  cadenceDays: integer("cadence_days").notNull().default(30),
+  // Newline-separated checklist item titles.
+  checklistTemplate: text("checklist_template").notNull(),
+  nextDueAt: timestamp("next_due_at").notNull(),
+  lastGeneratedAt: timestamp("last_generated_at"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -222,6 +299,13 @@ export const activityLogs = pgTable("activity_logs", {
   taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   detail: text("detail"),
+  // Who did this — a plain name string, not a userId/FK, since there's no
+  // user accounts table yet (single shared-password app). Every write site
+  // passes a real value from src/data/agency-info.ts (the agency owner, or
+  // "Client" for the one action a client actually triggers themselves —
+  // opening the handoff page), so this scales cleanly to a real userId FK
+  // later without changing what's displayed today.
+  actorName: text("actor_name").notNull().default("Paul"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

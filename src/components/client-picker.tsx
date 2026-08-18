@@ -35,11 +35,11 @@ export function ClientPicker({
         ))}
       </select>
       {clients.length === 0 && !isNew && (
-        <p className="mt-1 text-xs text-[#898781]">No clients yet — pick &ldquo;+ Add new client&rdquo; above.</p>
+        <p className="mt-1 text-xs text-muted-foreground">No clients yet — pick &ldquo;+ Add new client&rdquo; above.</p>
       )}
 
       {isNew && (
-        <div className="mt-3 space-y-3 rounded-md border border-black/10 bg-white p-3">
+        <div className="mt-3 space-y-3 rounded-md border border-border bg-white p-3">
           <div>
             <label className="mb-1 block text-xs font-semibold text-[#52514e]">New client name *</label>
             <input

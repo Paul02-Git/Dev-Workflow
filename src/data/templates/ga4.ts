@@ -6,16 +6,11 @@ export const ga4Template: TemplateDef = {
   technologyKey: "ga4",
   tasks: [
     {
-      canonicalKey: "access.ga4",
-      stage: "access_credentials",
-      title: "Confirm GA4 access",
-      priority: "HIGH",
-    },
-    {
       canonicalKey: "analytics.ga4.property",
       stage: "analytics_tracking",
-      title: "Create/select GA4 property & data stream",
-      dependsOn: ["access.ga4"],
+      title: "Create GA4 property & data stream",
+      description: "Created and owned under the agency Google account during the build.",
+      dependsOn: ["discovery.scope_confirmed"],
       priority: "HIGH",
     },
     {
@@ -61,6 +56,14 @@ export const ga4Template: TemplateDef = {
       dependsOn: ["analytics.ga4.configure_conversions", "tracking.gtm.published"],
       priority: "CRITICAL",
       isCritical: true,
+    },
+    {
+      canonicalKey: "handoff.ga4_ownership",
+      stage: "handoff",
+      title: "Add client as GA4 account owner",
+      description: "Grant the client's Google account Owner/Admin access to the property built under the agency account.",
+      dependsOn: ["analytics.ga4.verify_conversions"],
+      priority: "MEDIUM",
     },
   ],
 };
