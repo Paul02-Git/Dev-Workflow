@@ -6,7 +6,7 @@ const BUCKET_ORDER = ["Today", "Yesterday", "This week", "Earlier"];
 export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
   if (activity.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+      <div className="app-card p-4 text-sm text-muted-foreground">
         No activity recorded yet.
       </div>
     );
@@ -24,7 +24,7 @@ export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
       {BUCKET_ORDER.filter((b) => byBucket.has(b)).map((bucket) => (
         <div key={bucket}>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{bucket}</h3>
-          <div className="divide-y divide-border rounded-lg border border-border bg-card">
+          <div className="app-card divide-y divide-border">
             {byBucket.get(bucket)!.map((row) => {
               const { actor, rest } = formatActivitySentence(row);
               return (

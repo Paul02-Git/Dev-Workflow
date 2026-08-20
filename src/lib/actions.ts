@@ -10,6 +10,7 @@ import {
   removeTaskTag,
   addTaskAttachment,
   removeTaskAttachment,
+  bulkRemoveAttachments,
   deleteProject,
   createAdHocTask,
   updateProjectOverview,
@@ -37,7 +38,7 @@ import {
   generateMaintenanceRun,
 } from "@/lib/queries/maintenance";
 import { generateHandoffLink, revokeHandoffLink } from "@/lib/queries/projects";
-import { uploadTaskAttachment, uploadProjectAttachment } from "@/lib/storage";
+import { uploadTaskAttachment, uploadProjectAttachment, replaceAttachment } from "@/lib/storage";
 
 export async function createClientAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
@@ -93,6 +94,16 @@ export async function updateTaskStatusAction(taskId: string, status: string) {
   const task = await updateTaskStatus(taskId, status);
   if (task) {
     revalidatePath(`/projects/${task.projectId}`);
+    revalidatePath("/dashboard");
+  }
+}
+
+/** "Start Task" on the dashboard's Command Center panel — marks the task in progress and refreshes both pages. */
+export async function startDashboardTaskAction(taskId: string) {
+  const task = await updateTaskStatus(taskId, "IN_PROGRESS");
+  if (task) {
+    revalidatePath("/dashboard");
+    revalidatePath(`/projects/${task.projectId}`);
   }
 }
 
@@ -110,7 +121,10 @@ export async function updateTaskDetailsAction(
 
 export async function setTaskWaitingOnClientAction(taskId: string, waiting: boolean) {
   const projectId = await setTaskWaitingOnClient(taskId, waiting);
-  if (projectId) revalidatePath(`/projects/${projectId}`);
+  if (projectId) {
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath("/dashboard");
+  }
 }
 
 export async function addTaskTagAction(taskId: string, tagName: string) {
@@ -130,6 +144,21 @@ export async function addTaskAttachmentAction(taskId: string, url: string, label
 
 export async function removeTaskAttachmentAction(attachmentId: string) {
   const projectId = await removeTaskAttachment(attachmentId);
+  if (projectId) revalidatePath(`/projects/${projectId}`);
+}
+
+export async function bulkRemoveAttachmentsAction(attachmentIds: string[]) {
+  const projectIds = await bulkRemoveAttachments(attachmentIds);
+  for (const id of projectIds) revalidatePath(`/projects/${id}`);
+}
+
+export async function replaceAttachmentAction(formData: FormData) {
+  const attachmentId = String(formData.get("attachmentId") ?? "");
+  const file = formData.get("file");
+  if (!attachmentId || !(file instanceof File)) {
+    throw new Error("Missing attachment or file");
+  }
+  const projectId = await replaceAttachment(attachmentId, file);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
@@ -159,6 +188,7 @@ export async function createTaskAction(formData: FormData) {
 
   await createAdHocTask({ projectId, stageKey, title, priority, isCritical });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function updateProjectOverviewAction(formData: FormData) {
@@ -196,6 +226,7 @@ export async function createAccessItemAction(formData: FormData) {
 
   await createAccessItem({ projectId, name, url, role, instructions, username, password });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 /**
@@ -219,12 +250,14 @@ export async function quickAddAccessItemAction(projectId: string, presetName: st
     status: "NOT_REQUESTED",
   });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function updateAccessItemStatusAction(accessItemId: string, projectId: string, status: string) {
   await requireAuth();
   await updateAccessItem(accessItemId, { status });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function updateAccessItemDetailsAction(formData: FormData) {
@@ -240,12 +273,14 @@ export async function updateAccessItemDetailsAction(formData: FormData) {
 
   await updateAccessItem(accessItemId, { name, url: url || null, role: role || null, instructions: instructions || null });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function clearAccessItemCredentialsAction(accessItemId: string, projectId: string) {
   await requireAuth();
   await clearAccessItemCredentials(accessItemId);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function setAccessItemCredentialsAction(formData: FormData) {
@@ -259,6 +294,7 @@ export async function setAccessItemCredentialsAction(formData: FormData) {
 
   await setAccessItemCredentials(accessItemId, { username, password: password || undefined });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }
 
 /**
@@ -275,7 +311,10 @@ export async function revealAccessItemPasswordAction(accessItemId: string): Prom
 export async function deleteAccessItemAction(accessItemId: string) {
   await requireAuth();
   const projectId = await deleteAccessItem(accessItemId);
-  if (projectId) revalidatePath(`/projects/${projectId}`);
+  if (projectId) {
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath("/dashboard");
+  }
 }
 
 export async function searchAction(query: string): Promise<SearchResult[]> {
@@ -371,4 +410,5 @@ export async function uploadProjectFileAction(formData: FormData) {
 export async function updateProjectNotesAction(projectId: string, notes: string) {
   await updateProjectNotes(projectId, notes || null);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/dashboard");
 }

@@ -14,13 +14,13 @@ const STATUS_LABEL: Record<TimelineStage["status"], string> = {
 
 const STATUS_TEXT_COLOR: Record<TimelineStage["status"], string> = {
   done: "text-[#0ca30c]",
-  current: "text-primary",
+  current: "text-[#2a78d6]",
   pending: "text-muted-foreground",
 };
 
 const STATUS_DOT_COLOR: Record<TimelineStage["status"], string> = {
   done: "bg-[#0ca30c]",
-  current: "bg-primary",
+  current: "bg-[#2a78d6]",
   pending: "bg-black/15",
 };
 
@@ -31,7 +31,7 @@ export function ProjectTimeline({ stages }: { stages: TimelineStage[] }) {
   const currentStage = stages.find((s) => s.status === "current");
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="app-card p-4">
       <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Timeline / Milestones</h2>
 
       {/* At-a-glance summary — answers "where is this project right now?" in
@@ -44,7 +44,7 @@ export function ProjectTimeline({ stages }: { stages: TimelineStage[] }) {
           {doneCount} of {stages.length} stages complete
         </span>
       </div>
-      <div className={`mb-2 text-xs font-medium ${currentStage ? "text-primary" : "text-[#0ca30c]"}`}>
+      <div className={`mb-2 text-xs font-medium ${currentStage ? "text-[#2a78d6]" : "text-[#0ca30c]"}`}>
         {currentStage ? "In progress" : "Complete"}
       </div>
 

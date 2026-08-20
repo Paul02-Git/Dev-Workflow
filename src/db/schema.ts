@@ -232,6 +232,10 @@ export const attachments = pgTable("attachments", {
   url: text("url"),
   storagePath: text("storage_path"),
   label: text("label"),
+  // Bytes — only set for storagePath uploads (file.size at upload time);
+  // null for pasted-link attachments and for rows uploaded before this
+  // column existed.
+  fileSize: integer("file_size"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

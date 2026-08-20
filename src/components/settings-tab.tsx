@@ -21,7 +21,7 @@ export function SettingsTab({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="app-card p-4">
         <h2 className="mb-1 text-sm font-semibold">Technologies</h2>
         <p className="mb-2 text-xs text-muted-foreground">
           Selected when this project was created — reference only, doesn&apos;t regenerate the workflow.
@@ -39,7 +39,7 @@ export function SettingsTab({
         )}
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="app-card p-4">
         <h2 className="mb-1 text-sm font-semibold">Maintenance</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           Recurring retainer checklists for this project. No cron runs these — generate each cycle by hand

@@ -14,8 +14,9 @@ import {
   attachments,
   accessItems,
 } from "@/db/schema";
-import { eq, desc, asc, inArray, and, or, isNull, sql, ne } from "drizzle-orm";
+import { eq, desc, inArray, and, or, isNull, sql, ne } from "drizzle-orm";
 import { randomBytes } from "crypto";
+import { deleteStorageObjects } from "@/lib/storage";
 import { generateWorkflow } from "@/lib/workflow-engine/generate-workflow";
 import { computeEffectiveStatuses } from "@/lib/workflow-engine/blocked-status";
 import { computeHealthScore } from "@/lib/health/health-score";
@@ -410,96 +411,22 @@ export type ProjectPulseSummary = {
   daysToLaunch: number | null;
 };
 
-/**
- * Per-project snapshot for the dashboard's Project Pulse strip — health,
- * task completion, forgotten-task issues, current stage, and launch
- * countdown, all derived from data `getProjectDetail` already fetches (one
- * call per project, not two — `getProjectIssues` re-fetches detail
- * internally, which this deliberately avoids at dashboard scale).
- */
-export async function listProjectPulseSummaries(): Promise<ProjectPulseSummary[]> {
-  const projectRows = await listProjects();
-  const active = projectRows.filter((p) => p.status === "ACTIVE");
-
-  const summaries = await Promise.all(
-    active.map(async (p): Promise<ProjectPulseSummary | null> => {
-      const detail = await getProjectDetail(p.id);
-      if (!detail) return null;
-      const { project, stages: projectStageRows, tasks: detailTasks } = detail;
-
-      const topLevel = detailTasks.filter((t) => !t.parentTaskId);
-      const tasksDone = topLevel.filter((t) => t.effectiveStatus === "DONE").length;
-      const tasksTotal = topLevel.length;
-
-      const byCanonicalKey = new Map(detailTasks.filter((t) => t.canonicalKey).map((t) => [t.canonicalKey!, t]));
-      const now = Date.now();
-      const lookup: TaskLookup = {
-        status: (canonicalKey) => byCanonicalKey.get(canonicalKey)?.status,
-        daysSince: (canonicalKey) => {
-          const task = byCanonicalKey.get(canonicalKey);
-          if (!task) return null;
-          const anchor = task.completedAt ?? project.createdAt;
-          return Math.floor((now - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24));
-        },
-      };
-      const issues = checkProject(lookup);
-
-      // Same "current stage" logic as the project page's own Timeline —
-      // first stage (in sort order) that isn't fully done/skipped yet.
-      const timelineStages = projectStageRows
-        .map((stage) => {
-          const stageTasks = detailTasks.filter((t) => t.stageId === stage.id);
-          const done =
-            stageTasks.length > 0 &&
-            stageTasks.every((t) => t.effectiveStatus === "DONE" || t.effectiveStatus === "SKIPPED");
-          return { id: stage.id, name: stage.name, taskCount: stageTasks.length, done };
-        })
-        .filter((s) => s.taskCount > 0);
-      const currentStage = timelineStages.find((s) => !s.done);
-
-      let milestoneName: string | null = null;
-      let milestonePercent: number | null = null;
-      if (currentStage) {
-        milestoneName = currentStage.name;
-        const stageTasksAll = detailTasks.filter((t) => t.stageId === currentStage.id);
-        const stageDone = stageTasksAll.filter(
-          (t) => t.effectiveStatus === "DONE" || t.effectiveStatus === "SKIPPED"
-        ).length;
-        milestonePercent = stageTasksAll.length > 0 ? Math.round((stageDone / stageTasksAll.length) * 100) : 0;
-      } else if (timelineStages.length > 0) {
-        milestoneName = "All stages complete";
-        milestonePercent = 100;
-      }
-
-      const daysToLaunch = project.targetLaunchDate
-        ? Math.round(
-            (new Date(project.targetLaunchDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000
-          )
-        : null;
-
-      return {
-        id: project.id,
-        name: project.name,
-        clientName: p.clientName,
-        healthScore: detail.healthScore,
-        tasksDone,
-        tasksTotal,
-        issues: issues.map((i) => ({ id: i.id, message: i.message })),
-        milestoneName,
-        milestonePercent,
-        daysToLaunch,
-      };
-    })
-  );
-
-  return summaries.filter((s): s is ProjectPulseSummary => s !== null);
-}
 
 export async function updateTaskStatus(taskId: string, status: string) {
   const completedAt = status === "DONE" ? new Date() : null;
+  // A task marked Done can't still be "waiting on the client" — clear the
+  // flag so it doesn't silently reappear in the Waiting On Client list if
+  // the task is later reopened without being re-flagged.
+  const waitingFields =
+    status === "DONE" ? { isWaitingOnClient: false, waitingOnClientSince: null } : {};
   const [task] = await db
     .update(tasks)
-    .set({ status: status as (typeof tasks.$inferInsert)["status"], completedAt, updatedAt: new Date() })
+    .set({
+      status: status as (typeof tasks.$inferInsert)["status"],
+      completedAt,
+      updatedAt: new Date(),
+      ...waitingFields,
+    })
     .where(eq(tasks.id, taskId))
     .returning();
 
@@ -533,10 +460,17 @@ export async function updateTaskStatus(taskId: string, status: string) {
 export async function bulkUpdateTaskStatus(taskIds: string[], status: string): Promise<string[]> {
   if (taskIds.length === 0) return [];
   const completedAt = status === "DONE" ? new Date() : null;
+  const waitingFields =
+    status === "DONE" ? { isWaitingOnClient: false, waitingOnClientSince: null } : {};
 
   const updated = await db
     .update(tasks)
-    .set({ status: status as (typeof tasks.$inferInsert)["status"], completedAt, updatedAt: new Date() })
+    .set({
+      status: status as (typeof tasks.$inferInsert)["status"],
+      completedAt,
+      updatedAt: new Date(),
+      ...waitingFields,
+    })
     .where(inArray(tasks.id, taskIds))
     .returning({ id: tasks.id, projectId: tasks.projectId });
 
@@ -608,16 +542,50 @@ export async function addTaskAttachment(taskId: string, input: { url: string; la
   return getTaskProjectId(taskId);
 }
 
-/** Handles both task-scoped and project-scoped attachments (exactly one of taskId/projectId is set). */
+/**
+ * Handles both task-scoped and project-scoped attachments (exactly one of
+ * taskId/projectId is set). Deletes the underlying Supabase Storage object
+ * too when there is one (uploaded files, not pasted links) — otherwise a
+ * deleted attachment's file just sits in the bucket forever.
+ */
 export async function removeTaskAttachment(attachmentId: string) {
   const [row] = await db
-    .select({ taskId: attachments.taskId, projectId: attachments.projectId })
+    .select({ taskId: attachments.taskId, projectId: attachments.projectId, storagePath: attachments.storagePath })
     .from(attachments)
     .where(eq(attachments.id, attachmentId));
   await db.delete(attachments).where(eq(attachments.id, attachmentId));
   if (!row) return null;
+  if (row.storagePath) await deleteStorageObjects([row.storagePath]);
   if (row.projectId) return row.projectId;
   return row.taskId ? getTaskProjectId(row.taskId) : null;
+}
+
+/**
+ * Same as removeTaskAttachment, applied to many attachments at once (the
+ * Files tab's bulk-select bar). Returns the distinct set of affected
+ * project ids so the caller knows which project pages to revalidate.
+ */
+export async function bulkRemoveAttachments(attachmentIds: string[]): Promise<string[]> {
+  if (attachmentIds.length === 0) return [];
+  const rows = await db
+    .select({ taskId: attachments.taskId, projectId: attachments.projectId, storagePath: attachments.storagePath })
+    .from(attachments)
+    .where(inArray(attachments.id, attachmentIds));
+  await db.delete(attachments).where(inArray(attachments.id, attachmentIds));
+
+  const storagePaths = rows.map((r) => r.storagePath).filter((p): p is string => !!p);
+  if (storagePaths.length > 0) await deleteStorageObjects(storagePaths);
+
+  const projectIds = new Set<string>();
+  for (const row of rows) {
+    if (row.projectId) {
+      projectIds.add(row.projectId);
+    } else if (row.taskId) {
+      const pid = await getTaskProjectId(row.taskId);
+      if (pid) projectIds.add(pid);
+    }
+  }
+  return Array.from(projectIds);
 }
 
 /**
@@ -637,6 +605,8 @@ export async function listAllTasks() {
       isCritical: tasks.isCritical,
       dueDate: tasks.dueDate,
       assignee: tasks.assignee,
+      isWaitingOnClient: tasks.isWaitingOnClient,
+      waitingOnClientSince: tasks.waitingOnClientSince,
       stageKey: stages.key,
       stageName: stages.name,
       projectName: projects.name,
@@ -742,57 +712,154 @@ export async function createAdHocTask(input: {
 const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const ESTIMATE_MINUTES: Record<string, number> = { CRITICAL: 45, HIGH: 30, MEDIUM: 20, LOW: 10 };
 
+type AllTasksRow = Awaited<ReturnType<typeof listAllTasks>>[number];
+
+export type ActionQueueItem = {
+  taskId: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  priority: string;
+  isCritical: boolean;
+  estimateMinutes: number;
+  // Which project tab this task actually lives in — QA is a separate tab
+  // from the rest of the board, so a QA-stage task must route there.
+  tabSlug: "tasks" | "qa";
+};
+
 /**
- * The Next Action Dashboard's core query: for every active project, the
- * single highest-priority task that's actually actionable right now (not
- * done, not skipped, not blocked on something else). No per-task time
- * tracking exists, so the estimate is a priority-based heuristic — good
- * enough to plan a morning, not a real time-tracking replacement.
+ * Dashboard's My Action Queue — every actionable top-level task across
+ * every active project, ranked together (critical first, then priority).
+ * Unlike a "pick one per project" approach, a project with several urgent
+ * tasks can show up more than once — this is "what should I work on next,
+ * period," not a per-project summary. No per-task time tracking exists, so
+ * the estimate is a priority-based heuristic, good enough to plan a
+ * morning. Takes `allTasks` (from `listAllTasks()`) rather than fetching it
+ * itself so the dashboard can derive several widgets from one DB scan.
  */
-export async function getNextActions() {
-  const [activeProjects, allTasks] = await Promise.all([listProjects(), listAllTasks()]);
+export function deriveActionQueue(allTasks: AllTasksRow[]): ActionQueueItem[] {
+  const actionable = allTasks.filter(
+    (t) =>
+      !t.parentTaskId &&
+      t.projectStatus === "ACTIVE" &&
+      t.effectiveStatus !== "DONE" &&
+      t.effectiveStatus !== "SKIPPED" &&
+      t.effectiveStatus !== "BLOCKED"
+  );
+  actionable.sort((a, b) => {
+    if (a.isCritical !== b.isCritical) return a.isCritical ? -1 : 1;
+    return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
+  });
+  return actionable.map((t) => ({
+    taskId: t.id,
+    title: t.title,
+    projectId: t.projectId,
+    projectName: t.projectName,
+    priority: t.priority,
+    isCritical: t.isCritical,
+    estimateMinutes: ESTIMATE_MINUTES[t.priority] ?? 20,
+    tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
+  }));
+}
 
-  const tasksByProject = new Map<string, typeof allTasks>();
+export type WaitingOnClientProjectSummary = {
+  projectId: string;
+  projectName: string;
+  taskTitle: string;
+  waitingOnClientSince: Date | string | null;
+  // Which project tab this task actually lives in — QA is a separate tab
+  // from the rest of the board, so a QA-stage task must route there, not
+  // to the (empty, for it) Tasks tab.
+  tabSlug: "tasks" | "qa";
+};
+
+/** One row per project — the longest-waiting flagged task is shown as the reason, oldest first. */
+export function deriveWaitingOnClient(allTasks: AllTasksRow[]): WaitingOnClientProjectSummary[] {
+  const flagged = allTasks.filter(
+    (t) => t.isWaitingOnClient && t.status !== "DONE" && t.status !== "SKIPPED"
+  );
+  flagged.sort((a, b) => {
+    const aTime = a.waitingOnClientSince ? new Date(a.waitingOnClientSince).getTime() : 0;
+    const bTime = b.waitingOnClientSince ? new Date(b.waitingOnClientSince).getTime() : 0;
+    return aTime - bTime;
+  });
+  const byProject = new Map<string, WaitingOnClientProjectSummary>();
+  for (const t of flagged) {
+    if (byProject.has(t.projectId)) continue;
+    byProject.set(t.projectId, {
+      projectId: t.projectId,
+      projectName: t.projectName,
+      taskTitle: t.title,
+      waitingOnClientSince: t.waitingOnClientSince,
+      tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
+    });
+  }
+  return Array.from(byProject.values());
+}
+
+export type BlockedProjectSummary = {
+  projectId: string;
+  projectName: string;
+  taskTitle: string;
+  // Which project tab this task actually lives in — QA is a separate tab
+  // from the rest of the board, so a QA-stage task must route there.
+  tabSlug: "tasks" | "qa";
+};
+
+/** One row per active project with at least one dependency-blocked top-level task, showing that task as the reason. */
+export function deriveBlockedProjects(allTasks: AllTasksRow[]): BlockedProjectSummary[] {
+  const byProject = new Map<string, BlockedProjectSummary>();
   for (const t of allTasks) {
-    if (t.parentTaskId) continue; // next actions are top-level tasks only
-    if (!tasksByProject.has(t.projectId)) tasksByProject.set(t.projectId, []);
-    tasksByProject.get(t.projectId)!.push(t);
-  }
-
-  const results: {
-    projectId: string;
-    projectName: string;
-    clientName: string;
-    task: (typeof allTasks)[number];
-    estimateMinutes: number;
-  }[] = [];
-
-  for (const project of activeProjects) {
-    if (project.status !== "ACTIVE") continue;
-    const projectTasks = tasksByProject.get(project.id) ?? [];
-    const actionable = projectTasks.filter(
-      (t) => t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED" && t.effectiveStatus !== "BLOCKED"
-    );
-    if (actionable.length === 0) continue;
-
-    // stable sort: critical first, then priority, ties broken by the
-    // original (dependency-respecting) sortOrder from listAllTasks
-    actionable.sort((a, b) => {
-      if (a.isCritical !== b.isCritical) return a.isCritical ? -1 : 1;
-      return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
-    });
-
-    const next = actionable[0];
-    results.push({
-      projectId: project.id,
-      projectName: project.name,
-      clientName: project.clientName,
-      task: next,
-      estimateMinutes: ESTIMATE_MINUTES[next.priority] ?? 20,
+    if (t.parentTaskId || t.projectStatus !== "ACTIVE" || t.effectiveStatus !== "BLOCKED") continue;
+    if (byProject.has(t.projectId)) continue;
+    byProject.set(t.projectId, {
+      projectId: t.projectId,
+      projectName: t.projectName,
+      taskTitle: t.title,
+      tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
     });
   }
+  return Array.from(byProject.values());
+}
 
-  return results;
+export type ReadyToLaunchSummary = {
+  projectId: string;
+  projectName: string;
+  launchScorePercent: number;
+};
+
+/**
+ * "Launch readiness" for every active project with at least one critical
+ * task — critical-task completion %, sorted highest first. Shared by
+ * `deriveReadyToLaunch` (the dashboard's Ready to Launch list, threshold-
+ * filtered) and the dashboard's Command Center panel (which auto-features
+ * whichever active project ranks #1 here, regardless of threshold).
+ */
+export function deriveLaunchReadinessRanking(allTasks: AllTasksRow[]): ReadyToLaunchSummary[] {
+  const criticalByProject = new Map<string, { done: number; total: number; name: string }>();
+  for (const t of allTasks) {
+    if (t.parentTaskId || t.projectStatus !== "ACTIVE" || !t.isCritical) continue;
+    const entry = criticalByProject.get(t.projectId) ?? { done: 0, total: 0, name: t.projectName };
+    entry.total += 1;
+    if (t.effectiveStatus === "DONE") entry.done += 1;
+    criticalByProject.set(t.projectId, entry);
+  }
+  const results: ReadyToLaunchSummary[] = [];
+  for (const [projectId, { done, total, name }] of criticalByProject) {
+    if (total === 0) continue;
+    results.push({ projectId, projectName: name, launchScorePercent: Math.round((done / total) * 100) });
+  }
+  return results.sort((a, b) => b.launchScorePercent - a.launchScorePercent);
+}
+
+// Same "On track" threshold the health-score color bands already use
+// elsewhere — a project counts as "almost ready" once its critical-task
+// completion crosses this, not just once every last one is checked off.
+const READY_TO_LAUNCH_THRESHOLD = 85;
+
+/** Active projects whose critical-task completion is at or above the "on track" threshold. */
+export function deriveReadyToLaunch(allTasks: AllTasksRow[]): ReadyToLaunchSummary[] {
+  return deriveLaunchReadinessRanking(allTasks).filter((r) => r.launchScorePercent >= READY_TO_LAUNCH_THRESHOLD);
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +997,26 @@ export async function listRecentActivity(projectId: string, limit = 8) {
     .limit(limit);
 }
 
+/** Same as `listRecentActivity` but across every project — backs the dashboard's Recent Activity feed. */
+export async function listRecentActivityAcrossProjects(limit = 10) {
+  return db
+    .select({
+      id: activityLogs.id,
+      action: activityLogs.action,
+      detail: activityLogs.detail,
+      createdAt: activityLogs.createdAt,
+      actorName: activityLogs.actorName,
+      taskTitle: tasks.title,
+      projectId: activityLogs.projectId,
+      projectName: projects.name,
+    })
+    .from(activityLogs)
+    .innerJoin(projects, eq(activityLogs.projectId, projects.id))
+    .leftJoin(tasks, eq(activityLogs.taskId, tasks.id))
+    .orderBy(desc(activityLogs.createdAt))
+    .limit(limit);
+}
+
 /** Most recent time the client actually opened the public /handoff/[token] page, or null if never. */
 export async function getLastHandoffView(projectId: string): Promise<Date | null> {
   const [row] = await db
@@ -961,21 +1048,6 @@ export async function setTaskWaitingOnClient(taskId: string, waiting: boolean): 
 }
 
 /** Open tasks currently flagged as waiting on the client, oldest first. */
-export async function listWaitingOnClientTasks(projectId: string) {
-  return db
-    .select({ id: tasks.id, title: tasks.title, waitingOnClientSince: tasks.waitingOnClientSince })
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.projectId, projectId),
-        eq(tasks.isWaitingOnClient, true),
-        ne(tasks.status, "DONE"),
-        ne(tasks.status, "SKIPPED")
-      )
-    )
-    .orderBy(asc(tasks.waitingOnClientSince));
-}
-
 // ---------------------------------------------------------------------------
 // Files, Notes (project-level)
 // ---------------------------------------------------------------------------
@@ -993,6 +1065,7 @@ export async function listProjectAttachments(projectId: string) {
       url: attachments.url,
       storagePath: attachments.storagePath,
       label: attachments.label,
+      fileSize: attachments.fileSize,
       createdAt: attachments.createdAt,
       taskTitle: tasks.title,
     })

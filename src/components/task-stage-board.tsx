@@ -1,6 +1,7 @@
 import { TaskStatusSelect } from "@/components/task-status-select";
 import { TaskDoneCheckbox } from "@/components/task-done-checkbox";
 import { TaskDetailsToggle } from "@/components/task-details";
+import { TaskWaitingToggle } from "@/components/task-waiting-toggle";
 
 type BoardTask = {
   id: string;
@@ -39,7 +40,7 @@ export function TaskStageBoard({
         return (
           <div key={stage.id}>
             <h2 className="mb-2 text-sm font-semibold text-[#52514e]">{stage.name}</h2>
-            <div className="divide-y divide-border rounded-lg border border-border bg-card">
+            <div className="app-card divide-y divide-border">
               {stageTasks.map((task) => (
                 <div key={task.id}>
                   <div
@@ -98,22 +99,22 @@ export function TaskStageBoard({
                             taskId={task.id}
                             notes={task.notes}
                             dueDate={task.dueDate}
-                            assignee={task.assignee}
-                            tags={task.tags}
                             attachments={task.attachments}
-                            isWaitingOnClient={task.isWaitingOnClient}
                           />
                         </div>
                       </div>
                     </div>
-                    <TaskStatusSelect taskId={task.id} status={task.status} effectiveStatus={task.effectiveStatus} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      <TaskWaitingToggle taskId={task.id} isWaitingOnClient={task.isWaitingOnClient} />
+                      <TaskStatusSelect taskId={task.id} status={task.status} effectiveStatus={task.effectiveStatus} />
+                    </div>
                   </div>
                   {(subtasksByParent.get(task.id) ?? []).length > 0 && (
-                    <div className="space-y-1 border-t border-black/5 bg-muted px-4 py-2 pl-8">
+                    <div className="space-y-3 border-t border-black/5 bg-[#f9f9f9] px-4 py-2 pl-8">
                       {subtasksByParent.get(task.id)!.map((sub) => (
                         <div
                           key={sub.id}
-                          className={`flex items-center justify-between gap-3 rounded px-1 ${
+                          className={`flex items-center justify-between gap-4 rounded px-1 ${
                             sub.effectiveStatus === "DONE" ? "bg-[#eafaea]" : ""
                           }`}
                         >

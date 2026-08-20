@@ -27,7 +27,7 @@ export function LaunchChecklistDetail({ tasks }: { tasks: ChecklistTask[] }) {
     : { groups: Array.from(byStage.entries()) };
 
   return (
-    <div id="launch-checklist" className="mb-4 scroll-mt-4 rounded-lg border border-border bg-card p-4">
+    <div id="launch-checklist" className="app-card mb-4 scroll-mt-4 p-4">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
           Launch checklist · {doneCount}/{tasks.length}

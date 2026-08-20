@@ -8,6 +8,9 @@ import {
   SiFacebook,
   SiCloudways,
   SiElementor,
+  SiCloudflare,
+  SiStripe,
+  SiFigma,
 } from "react-icons/si";
 import { GlobeIcon } from "lucide-react";
 import type { IconType } from "react-icons";
@@ -47,6 +50,9 @@ const PLATFORM_META: { match: RegExp; Icon?: IconType; color: string; loginUrl?:
   { match: /facebook/i, Icon: SiFacebook, color: "#1877F2", loginUrl: "https://business.facebook.com/" },
   { match: /meta business|meta\b/i, Icon: SiMeta, color: "#0468D7", loginUrl: "https://business.facebook.com/" },
   { match: /cloudways/i, Icon: SiCloudways, color: "#2C39BD", loginUrl: "https://platform.cloudways.com/login" },
+  { match: /cloudflare/i, Icon: SiCloudflare, color: "#F38020", loginUrl: "https://dash.cloudflare.com/login" },
+  { match: /stripe/i, Icon: SiStripe, color: "#635BFF", loginUrl: "https://dashboard.stripe.com/login" },
+  { match: /figma/i, Icon: SiFigma, color: "#F24E1E", loginUrl: "https://www.figma.com/login" },
   { match: /clarity/i, color: "#a259ff", loginUrl: "https://clarity.microsoft.com/" },
   { match: /klaviyo/i, color: "#0b0b0b", loginUrl: "https://www.klaviyo.com/login" },
   { match: /printify/i, color: "#a259ff", loginUrl: "https://printify.com/app/login/" },
@@ -97,6 +103,27 @@ export function PlatformBadge({ name, size = 28 }: { name: string; size?: number
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full font-bold text-white"
+      style={{ width: size, height: size, backgroundColor: monogramColor(name), fontSize: size * 0.4 }}
+    >
+      {name.trim().charAt(0).toUpperCase() || "?"}
+    </span>
+  );
+}
+
+/** Same real-icon-or-monogram fallback as PlatformBadge, but square with a small radius instead of a circle, and no background/ring behind a resolved brand icon. */
+export function SquarePlatformIcon({ name, size = 32 }: { name: string; size?: number }) {
+  const resolved = resolvePlatformIcon(name);
+  if (resolved) {
+    const { Icon, color } = resolved;
+    return (
+      <span className="flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
+        <Icon size={size * 0.9} color={color} />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-[4px] font-bold text-white"
       style={{ width: size, height: size, backgroundColor: monogramColor(name), fontSize: size * 0.4 }}
     >
       {name.trim().charAt(0).toUpperCase() || "?"}

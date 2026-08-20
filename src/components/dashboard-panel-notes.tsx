@@ -3,21 +3,17 @@
 import { useState, useTransition } from "react";
 import { updateProjectNotesAction } from "@/lib/actions";
 
-export function NotesTab({ projectId, notes }: { projectId: string; notes: string | null }) {
+export function DashboardPanelNotes({ projectId, notes }: { projectId: string; notes: string | null }) {
   const [, startTransition] = useTransition();
   const [value, setValue] = useState(notes ?? "");
   const [saved, setSaved] = useState(false);
 
   return (
-    <div className="app-card p-4">
+    <div>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Notes</h2>
-        {saved && <span className="text-[11px] font-medium text-[#0ca30c]">Saved</span>}
+        <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Notes</h3>
+        {saved && <span className="text-[11px] font-semibold text-[#0ca30c]">Saved</span>}
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">
-        A scratchpad for anything worth remembering about this project — client preferences, quirks, things
-        not to forget. Saves automatically.
-      </p>
       <textarea
         value={value}
         onChange={(e) => {
@@ -30,9 +26,9 @@ export function NotesTab({ projectId, notes }: { projectId: string; notes: strin
             setSaved(true);
           });
         }}
-        rows={14}
-        placeholder="Client prefers WhatsApp over email&#10;Uses Cloudflare&#10;Do not launch on a Friday"
-        className="w-full rounded border border-black/15 px-3 py-2 text-sm"
+        rows={4}
+        placeholder="Client prefers minimalist design with light colors…"
+        className="w-full rounded-md border border-black/15 px-3 py-2 text-xs"
       />
     </div>
   );

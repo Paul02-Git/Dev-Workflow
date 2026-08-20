@@ -16,7 +16,10 @@ export const config = {
   matcher: [
     // Every route except the login page, the public client-facing handoff
     // pages (deliberately unauthenticated — gated by their own unguessable
-    // token instead), static assets, and metadata files.
-    "/((?!login|handoff|_next/static|_next/image|favicon.ico).*)",
+    // token instead), static assets, and metadata files (icon/apple-icon
+    // are served at extension-less routes like /icon?<hash>, so they need
+    // an explicit exclusion — a plain extension-based pattern won't catch
+    // them the way it does /logo.png or /favicon.ico).
+    "/((?!login|handoff|_next/static|_next/image|icon|apple-icon|.*\\.(?:ico|png|jpg|jpeg|svg|gif|webp)$).*)",
   ],
 };

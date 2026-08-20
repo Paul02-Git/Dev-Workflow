@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { loginAction } from "@/lib/auth-actions";
 
 export default async function LoginPage({
@@ -9,14 +10,11 @@ export default async function LoginPage({
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6">
-        <div className="mb-6 flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-            DX
-          </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">Workflow OS</div>
-            <div className="text-[11px] text-muted-foreground">Sign in</div>
+      <div className="app-card w-full max-w-sm rounded-xl border border-border bg-card p-6">
+        <div className="mb-2 flex flex-col items-center">
+          <Image src="/logo.png" alt="" width={80} height={80} className="shrink-0 rounded-md" />
+          <div className="text-lg font-semibold leading-tight">
+            DEV<span className="text-[#2a78d6]">OS</span>
           </div>
         </div>
 

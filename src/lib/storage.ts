@@ -55,14 +55,56 @@ async function validateAndUpload(file: File, pathPrefix: string): Promise<string
 /** Uploads a task attachment (screenshot, PDF, etc.) and records it. */
 export async function uploadTaskAttachment(taskId: string, file: File): Promise<string | null> {
   const path = await validateAndUpload(file, taskId);
-  await db.insert(attachments).values({ taskId, storagePath: path, label: file.name });
+  await db.insert(attachments).values({ taskId, storagePath: path, label: file.name, fileSize: file.size });
   return getTaskProjectId(taskId);
 }
 
 /** Uploads a general project file (not tied to any specific task) and records it. */
 export async function uploadProjectAttachment(projectId: string, file: File): Promise<void> {
   const path = await validateAndUpload(file, `project-${projectId}`);
-  await db.insert(attachments).values({ projectId, storagePath: path, label: file.name });
+  await db.insert(attachments).values({ projectId, storagePath: path, label: file.name, fileSize: file.size });
+}
+
+/**
+ * Deletes one or more objects from the attachments bucket. Best-effort —
+ * called after the DB row is already gone, so a Storage-side failure here
+ * leaves an orphaned object rather than blocking the (already-successful)
+ * delete the user asked for. No-ops on an empty list rather than making a
+ * pointless API call.
+ */
+export async function deleteStorageObjects(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  const supabase = getAdminClient();
+  await supabase.storage.from(ATTACHMENTS_BUCKET).remove(paths);
+}
+
+/**
+ * Swaps the underlying file on an existing attachment record — e.g. a
+ * client sends a revised logo and it should replace the same "Logo" slot
+ * rather than becoming a second, separate row. Keeps the row's id and
+ * createdAt (when it was first added to the project); only storagePath,
+ * label, and fileSize move to the new file. The old storage object is
+ * deleted (best-effort) so replacing a file repeatedly doesn't leave
+ * orphaned copies behind in the bucket.
+ */
+export async function replaceAttachment(attachmentId: string, file: File): Promise<string | null> {
+  const [existing] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+  if (!existing) throw new Error("Attachment not found");
+
+  const pathPrefix = existing.taskId ? existing.taskId : `project-${existing.projectId}`;
+  const newPath = await validateAndUpload(file, pathPrefix);
+
+  if (existing.storagePath) {
+    await deleteStorageObjects([existing.storagePath]);
+  }
+
+  await db
+    .update(attachments)
+    .set({ storagePath: newPath, label: file.name, fileSize: file.size, url: null })
+    .where(eq(attachments.id, attachmentId));
+
+  if (existing.projectId) return existing.projectId;
+  return existing.taskId ? getTaskProjectId(existing.taskId) : null;
 }
 
 /**

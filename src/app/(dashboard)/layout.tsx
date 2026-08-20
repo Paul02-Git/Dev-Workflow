@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { logoutAction } from "@/lib/auth-actions";
 import { CommandPalette } from "@/components/command-palette";
 import { SearchTrigger } from "@/components/search-trigger";
@@ -8,12 +9,9 @@ import { listProjectsForSwitcher } from "@/lib/queries/projects";
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/today", label: "Today" },
   { href: "/clients", label: "Clients" },
   { href: "/maintenance", label: "Maintenance" },
   { href: "/templates", label: "Workflow Templates" },
-  { href: "/qa", label: "QA" },
   { href: "/reports", label: "Reports" },
   { href: "/integrations", label: "Integrations" },
   { href: "/settings", label: "Settings" },
@@ -26,11 +24,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="w-56 shrink-0 border-r border-border bg-card p-4">
         <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-            DX
-          </div>
+          <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
           <div>
-            <div className="text-sm font-semibold leading-tight">Workflow OS</div>
+            <div className="text-sm font-semibold leading-tight">
+              DEV<span className="text-[#2a78d6]">OS</span>
+            </div>
             <div className="text-[11px] text-muted-foreground">MVP</div>
           </div>
         </div>

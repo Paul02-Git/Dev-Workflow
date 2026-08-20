@@ -1,10 +1,10 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   getProjectDetail,
   getProjectIssues,
   listRecentActivity,
-  listWaitingOnClientTasks,
   listProjectAttachments,
   getLastHandoffView,
   type ProjectPulseSummary,
@@ -21,8 +21,8 @@ import { ProjectTimeline } from "@/components/project-timeline";
 import { NextActionsCard } from "@/components/next-actions-card";
 import { LaunchChecklistCard } from "@/components/launch-checklist-card";
 import { LaunchChecklistDetail } from "@/components/launch-checklist-detail";
-import { WaitingOnClientCard } from "@/components/waiting-on-client-card";
 import { RecentActivityCard } from "@/components/recent-activity-card";
+import { WaitingOnClientCard } from "@/components/waiting-on-client-card";
 import { ProjectTabs } from "@/components/project-tabs";
 import { TaskStageBoard } from "@/components/task-stage-board";
 import { FilesTab } from "@/components/files-tab";
@@ -33,15 +33,23 @@ import { STAGES } from "@/data/stages";
 
 const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProjectDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ filter?: string }>;
+}) {
   const { id } = await params;
+  const { filter } = await searchParams;
+  const activeFilter: "waiting" | "blocked" | "critical" | null =
+    filter === "waiting" ? "waiting" : filter === "blocked" ? "blocked" : filter === "critical" ? "critical" : null;
   const [
     detail,
     accessItems,
     issues,
     recentActivity,
     fullActivity,
-    waitingOnClientTasks,
     allFiles,
     maintenancePlans,
     lastHandoffView,
@@ -51,7 +59,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     getProjectIssues(id),
     listRecentActivity(id, 3),
     listRecentActivity(id, 500),
-    listWaitingOnClientTasks(id),
     listProjectAttachments(id),
     listMaintenancePlansForProject(id),
     getLastHandoffView(id),
@@ -139,6 +146,27 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       ? 100
       : null;
 
+  // This project's own tasks flagged "waiting on client" — most recently
+  // flagged first, same "done tasks never count as waiting" rule the
+  // dashboard's cross-project version uses, just scoped to this one
+  // project (and not deduped to one-per-project like the dashboard rollup is).
+  // QA-stage tasks link to the QA tab, not Tasks — QA has its own filtered
+  // view below since it's a separate tab from the rest of the board.
+  const qaStageIdSet = new Set(stages.filter((s) => s.key === "qa").map((s) => s.id));
+  const waitingOnClientTasks = topLevelTasks
+    .filter((t) => t.isWaitingOnClient && t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED")
+    .sort((a, b) => {
+      const aTime = a.waitingOnClientSince ? new Date(a.waitingOnClientSince).getTime() : 0;
+      const bTime = b.waitingOnClientSince ? new Date(b.waitingOnClientSince).getTime() : 0;
+      return bTime - aTime;
+    })
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      waitingOnClientSince: t.waitingOnClientSince,
+      tabSlug: (qaStageIdSet.has(t.stageId) ? "qa" : "tasks") as "qa" | "tasks",
+    }));
+
   const pulseSummary: ProjectPulseSummary = {
     id: project.id,
     name: project.name,
@@ -180,6 +208,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       <div className="mb-4 grid grid-cols-1 items-stretch gap-3 lg:grid-cols-3">
         <div className="flex h-full flex-col gap-3">
+          <NextActionsCard projectId={project.id} tasks={nextActions} />
           <ProjectOverviewForm
             projectId={project.id}
             domain={project.domain}
@@ -192,12 +221,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             lastActivityAt={recentActivity[0]?.createdAt ?? null}
             lastActivityActor={recentActivity[0]?.actorName ?? null}
           />
-          <NextActionsCard projectId={project.id} tasks={nextActions} />
           <div className="flex-1">
             <RecentActivityCard projectId={project.id} activity={recentActivity} />
           </div>
         </div>
-        <AccessItemsPanel projectId={project.id} items={accessItems} />
+        <div className="flex h-full flex-col gap-3">
+          <div className="shrink-0">
+            <WaitingOnClientCard projectId={project.id} tasks={waitingOnClientTasks} />
+          </div>
+          <div className="min-h-0 flex-1">
+            <AccessItemsPanel projectId={project.id} items={accessItems} />
+          </div>
+        </div>
         <div className="flex h-full flex-col gap-3">
           <div className="flex-1">
             <LaunchChecklistCard projectId={project.id} tasks={criticalTasksWithStage} />
@@ -205,8 +240,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <HandoffLinkPanel projectId={project.id} token={project.handoffToken} lastViewedAt={lastHandoffView} />
         </div>
       </div>
-
-      <WaitingOnClientCard tasks={waitingOnClientTasks} />
     </>
   );
 
@@ -221,19 +254,81 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const buildTasksRemaining = openTopLevel(new Set(buildStages.map((s) => s.id)));
   const qaTaskCount = openTopLevel(new Set(qaStages.map((s) => s.id)));
 
+  // Filtered board views — linked here from the dashboard/Command Center's
+  // Waiting On Client, Action Queue, and Blockers cards so a click actually
+  // lands on a real, scoped list instead of just the unfiltered board.
+  const waitingTasksByStage = new Map<string, typeof tasks>();
+  const blockedTasksByStage = new Map<string, typeof tasks>();
+  const criticalTasksByStage = new Map<string, typeof tasks>();
+  for (const [stageId, stageTasks] of tasksByStage) {
+    waitingTasksByStage.set(
+      stageId,
+      stageTasks.filter((t) => t.isWaitingOnClient && t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED")
+    );
+    blockedTasksByStage.set(
+      stageId,
+      stageTasks.filter((t) => t.effectiveStatus === "BLOCKED")
+    );
+    criticalTasksByStage.set(
+      stageId,
+      stageTasks.filter((t) => t.isCritical && t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED")
+    );
+  }
+  const FILTERED_BOARDS: Record<"waiting" | "blocked" | "critical", Map<string, typeof tasks>> = {
+    waiting: waitingTasksByStage,
+    blocked: blockedTasksByStage,
+    critical: criticalTasksByStage,
+  };
+  const filteredTasksByStage = activeFilter ? FILTERED_BOARDS[activeFilter] : tasksByStage;
+  const FILTER_BANNER_TEXT: Record<"waiting" | "blocked" | "critical", string> = {
+    waiting: "Showing only tasks waiting on the client.",
+    blocked: "Showing only blocked tasks.",
+    critical: "Showing only critical tasks.",
+  };
+  const FILTER_EMPTY_TEXT: Record<"waiting" | "blocked" | "critical", string> = {
+    waiting: "No tasks here are currently waiting on the client.",
+    blocked: "No tasks here are currently blocked.",
+    critical: "No tasks here are currently marked critical.",
+  };
+
+  const filterBanner = (tabSlug: "tasks" | "qa") =>
+    activeFilter && (
+      <div className="app-card mb-4 flex items-center justify-between gap-2 border-[#f5e3b3] bg-[#fef4de] p-3 text-sm text-[#8a5c00]">
+        <span>{FILTER_BANNER_TEXT[activeFilter]}</span>
+        <Link
+          href={`/projects/${project.id}?tab=${tabSlug}`}
+          className="shrink-0 rounded-md border border-[#f5e3b3] bg-white px-2.5 py-1 text-xs font-semibold text-[#8a5c00] hover:bg-[#fdeac3]"
+        >
+          Clear filter
+        </Link>
+      </div>
+    );
+
+  const filteredTasksCount = buildStages.reduce((sum, s) => sum + (filteredTasksByStage.get(s.id)?.length ?? 0), 0);
+
   const tasksContent = (
     <>
-      <LaunchChecklistDetail tasks={criticalTasksWithStage} />
-      <TaskStageBoard stages={buildStages} tasksByStage={tasksByStage} subtasksByParent={subtasksByParent} />
+      {activeFilter ? filterBanner("tasks") : <LaunchChecklistDetail tasks={criticalTasksWithStage} />}
+      {activeFilter && filteredTasksCount === 0 ? (
+        <p className="text-sm text-muted-foreground">{FILTER_EMPTY_TEXT[activeFilter]}</p>
+      ) : (
+        <TaskStageBoard stages={buildStages} tasksByStage={filteredTasksByStage} subtasksByParent={subtasksByParent} />
+      )}
     </>
   );
 
-  const qaContent =
-    qaStages.length === 0 || (tasksByStage.get(qaStages[0].id) ?? []).length === 0 ? (
-      <p className="text-sm text-muted-foreground">No QA tasks yet — they land here once the QA stage has any.</p>
-    ) : (
-      <TaskStageBoard stages={qaStages} tasksByStage={tasksByStage} subtasksByParent={subtasksByParent} />
-    );
+  const qaContent = (
+    <>
+      {filterBanner("qa")}
+      {qaStages.length === 0 || (filteredTasksByStage.get(qaStages[0].id)?.length ?? 0) === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {activeFilter ? FILTER_EMPTY_TEXT[activeFilter] : "No QA tasks yet — they land here once the QA stage has any."}
+        </p>
+      ) : (
+        <TaskStageBoard stages={qaStages} tasksByStage={filteredTasksByStage} subtasksByParent={subtasksByParent} />
+      )}
+    </>
+  );
 
   const filesContent = <FilesTab projectId={project.id} files={projectFiles} />;
   const notesContent = <NotesTab projectId={project.id} notes={project.notes} />;
@@ -262,6 +357,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         launchReady={launchReady}
         healthScore={detail.healthScore}
         stages={STAGES}
+        technologies={technologies}
       />
 
       <Suspense fallback={null}>

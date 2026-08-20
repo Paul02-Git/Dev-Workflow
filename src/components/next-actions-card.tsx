@@ -8,9 +8,22 @@ type ActionTask = {
   stageName: string;
 };
 
+const PRIORITY_COLOR: Record<string, string> = {
+  CRITICAL: "#d03b3b",
+  HIGH: "#c9720a",
+  MEDIUM: "#52514e",
+  LOW: "#898781",
+};
+const PRIORITY_BG: Record<string, string> = {
+  CRITICAL: "#fbe6e6",
+  HIGH: "#fef4de",
+  MEDIUM: "#f1f0ee",
+  LOW: "#f1f0ee",
+};
+
 export function NextActionsCard({ projectId, tasks }: { projectId: string; tasks: ActionTask[] }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="app-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Next actions</h2>
         <Link
@@ -24,22 +37,23 @@ export function NextActionsCard({ projectId, tasks }: { projectId: string; tasks
         <p className="text-xs text-muted-foreground">Nothing actionable right now — everything is either done or blocked.</p>
       ) : (
         <ul className="divide-y divide-border">
-          {tasks.map((t) => (
-            <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 font-medium">
-                  {t.title}
-                  {t.isCritical && (
-                    <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-[10px] font-bold text-[#d03b3b]">
-                      CRITICAL
-                    </span>
-                  )}
+          {tasks.map((t) => {
+            const label = t.isCritical ? "CRITICAL" : t.priority;
+            return (
+              <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium">{t.title}</div>
+                  <div className="text-[11px] text-muted-foreground">{t.stageName}</div>
                 </div>
-                <div className="text-[11px] text-muted-foreground">{t.stageName}</div>
-              </div>
-              <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">{t.priority}</span>
-            </li>
-          ))}
+                <span
+                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                  style={{ backgroundColor: PRIORITY_BG[label] ?? "#f1f0ee", color: PRIORITY_COLOR[label] ?? "#898781" }}
+                >
+                  {label}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

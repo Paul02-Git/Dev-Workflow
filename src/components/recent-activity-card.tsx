@@ -6,7 +6,7 @@ export function RecentActivityCard({ projectId, activity }: { projectId: string;
   if (activity.length === 0) return null;
 
   return (
-    <div className="h-full rounded-lg border border-border bg-card p-4">
+    <div className="app-card h-full p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Recent activity</h2>
         <Link

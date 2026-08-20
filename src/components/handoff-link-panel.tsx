@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ExternalLinkIcon, ArrowRightIcon } from "lucide-react";
+import { ExternalLinkIcon, ArrowRightIcon, GlobeIcon } from "lucide-react";
 import { generateHandoffLinkAction, revokeHandoffLinkAction } from "@/lib/actions";
 import { relativeTime } from "@/lib/format-activity";
 
@@ -28,9 +28,14 @@ export function HandoffLinkPanel({
   const active = !!currentToken;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="app-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Client Portal / Handoff</h2>
+        <div className="flex items-center gap-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#f2effc] text-[#7c5cf0]">
+            <GlobeIcon className="size-5" />
+          </span>
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Client Portal / Handoff</h2>
+        </div>
         {active && (
           <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#0ca30c]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#0ca30c]" />

@@ -24,6 +24,7 @@ import { AddTaskForm } from "@/components/add-task-form";
 import { generateHandoffLinkAction } from "@/lib/actions";
 import { MoreVerticalIcon, UsersIcon, LinkIcon, SettingsIcon, CheckCircle2Icon } from "lucide-react";
 import { hashPick } from "@/lib/hash-color";
+import { resolvePlatformIcon } from "@/components/platform-icon";
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   ACTIVE: { label: "Active", className: "bg-[#eef2fb] text-[#2a4d8f]" },
@@ -58,6 +59,7 @@ export function ProjectHeader({
   launchReady,
   healthScore,
   stages,
+  technologies,
 }: {
   projectId: string;
   projectName: string;
@@ -70,11 +72,16 @@ export function ProjectHeader({
   launchReady: boolean;
   healthScore: number;
   stages: readonly { key: string; name: string }[];
+  technologies: string[];
 }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const health = healthState(healthScore);
   const statusMeta = STATUS_LABEL[status] ?? { label: status, className: "bg-black/5 text-muted-foreground" };
+  // The project's primary technology's real brand logo, when Simple Icons
+  // has one — falls back to the existing initial-letter avatar otherwise
+  // (e.g. Klaviyo/Printify/GoHighLevel/Clarity have no icon there yet).
+  const primaryTechIcon = technologies.length > 0 ? resolvePlatformIcon(technologies[0]) : null;
 
   async function copyHandoffLink() {
     let token = handoffToken;
@@ -105,10 +112,14 @@ export function ProjectHeader({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
-            style={{ backgroundColor: projectColor(projectName) }}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white ring-1 ring-black/10"
+            style={{ backgroundColor: primaryTechIcon ? "white" : projectColor(projectName) }}
           >
-            {projectInitial(projectName)}
+            {primaryTechIcon ? (
+              <primaryTechIcon.Icon size={26} color={primaryTechIcon.color} />
+            ) : (
+              projectInitial(projectName)
+            )}
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

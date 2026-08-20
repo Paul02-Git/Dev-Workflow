@@ -24,7 +24,7 @@ export function LaunchChecklistCard({ projectId, tasks }: { projectId: string; t
   const remaining = tasks.length - shown;
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border bg-card p-4">
+    <div className="app-card flex h-full flex-col p-4">
       <div className="mb-3 flex shrink-0 items-center gap-2">
         <h2 className="shrink-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
           Launch checklist · {doneCount}/{tasks.length}

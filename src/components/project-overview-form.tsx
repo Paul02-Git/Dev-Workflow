@@ -53,10 +53,11 @@ export function ProjectOverviewForm({
       {!editing ? (
         <div className="grid grid-cols-2 gap-3">
           <IconStatCard
-            icon={<CalendarIcon className="size-3.5" />}
-            iconColor="var(--primary)"
-            iconBg="color-mix(in oklch, var(--primary) 15%, white)"
+            icon={<CalendarIcon className="size-5" />}
+            iconColor="#2a78d6"
+            iconBg="#e8f0fb"
             label="Launch date"
+            iconSize="h-9 w-9"
             action={
               <button
                 type="button"
@@ -73,19 +74,37 @@ export function ProjectOverviewForm({
             <div className="text-xs text-muted-foreground">{launchSub}</div>
           </IconStatCard>
 
-          <IconStatCard icon={<HeartIcon className="size-3.5" />} iconColor={health.color} iconBg={health.bg} label="Project health">
+          <IconStatCard
+            icon={<HeartIcon className="size-5" />}
+            iconColor={health.color}
+            iconBg={health.bg}
+            label="Project health"
+            iconSize="h-9 w-9"
+          >
             <div className="text-lg font-bold" style={{ color: health.color }}>
               {health.label}
             </div>
             <div className="text-xs text-muted-foreground">Updated {relativeTime(healthUpdatedAt)}</div>
           </IconStatCard>
 
-          <IconStatCard icon={<ListChecksIcon className="size-3.5" />} iconColor="#52514e" iconBg="#f1f0ee" label="Tasks remaining">
+          <IconStatCard
+            icon={<ListChecksIcon className="size-5" />}
+            iconColor="#52514e"
+            iconBg="#f1f0ee"
+            label="Tasks remaining"
+            iconSize="h-9 w-9"
+          >
             <div className="text-lg font-bold text-foreground">{tasksRemaining}</div>
             <div className="text-xs text-muted-foreground">Of {tasksTotal} total</div>
           </IconStatCard>
 
-          <IconStatCard icon={<ClockIcon className="size-3.5" />} iconColor="var(--primary)" iconBg="color-mix(in oklch, var(--primary) 15%, white)" label="Last activity">
+          <IconStatCard
+            icon={<ClockIcon className="size-5" />}
+            iconColor="#2a78d6"
+            iconBg="#e8f0fb"
+            label="Last activity"
+            iconSize="h-9 w-9"
+          >
             <div className="truncate text-lg font-bold text-foreground">
               {lastActivityAt ? relativeTime(lastActivityAt) : "No activity yet"}
             </div>

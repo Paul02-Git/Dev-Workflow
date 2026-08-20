@@ -2572,3 +2572,196 @@ this change, a live-environment constraint, not a code defect). Not
 independently confirmed in a real browser this session (Chrome tool
 unavailable, as throughout) — flagged directly given the sheer number of
 files touched; worth a visual pass the next time that tool is available.
+
+## Ran shadcn init with a preset ID — real theme/font/component changes, not just colors (2026-08-18)
+
+Paul explicitly asked twice to run `shadcn@latest init --preset b6Sth1NkLy
+--template next --pointer` (that command pattern is how tweakcn.com hands
+out generated themes). Substituted `bunx --bun` → `pnpm dlx` — this repo
+is pinned to pnpm specifically after an earlier `npm install` incident
+partially bypassed pnpm's managed `node_modules`; bun would risk the same
+class of problem as a third package manager.
+
+**Safety checkpoint first**: before running it, flagged that ~94 files of
+uncommitted work (this entire session, never committed since the original
+MVP commit) had no backup, and asked whether to commit first. Paul said
+yes — committed everything as `3e51a17` before touching anything, so the
+init command had a real rollback point instead of risking unrecoverable
+work.
+
+**Running it needed two retries** — `-y`/`--yes` alone didn't skip two
+separate confirmation prompts (`components.json already exists`, `Would
+you like to re-install existing UI components?`); needed `--force` and
+`--reinstall` explicitly added.
+
+**The actual result was a real surprise, reported directly rather than
+assumed**: the preset resolved to `style: "base-maia"`, `baseColor:
+"taupe"` — a completely different (warm brown/near-black) palette than
+the green `:root`/`.dark` values Paul had pasted and had me hand-apply two
+turns earlier, not a variation of it. It also rewrote 7 shadcn primitives
+(`Button`, `Card`, `Select`, `Badge`, `Breadcrumb`, `DropdownMenu`,
+`Tooltip`) to use a brand-new `hugeicons` dependency instead of
+`lucide-react` (used everywhere else in the app), and restyled them
+`rounded-4xl` instead of `rounded-lg` — directly undoing the "match the
+access-status pill's radius to the card" change from a few entries back.
+Fonts were the one unambiguous win: real `Outfit` (body) + `Space
+Grotesk` (heading) via `next/font/google`, properly wired into
+`layout.tsx` and consumed through `--font-sans`/`--font-heading`.
+
+Asked directly how to proceed given the mismatch (keep fonts only and
+revert the rest / full revert / keep everything) rather than guessing;
+Paul chose to keep everything, including the taupe palette and the two
+icon libraries.
+
+**Why the earlier token refactor didn't need redoing**: because that pass
+converted hardcoded hex to CSS-variable *references* (`bg-primary`,
+`var(--primary)`) rather than baking in the green hex values directly,
+every one of those ~50 files now automatically reflects the new taupe
+palette with zero additional changes — this is exactly the point of using
+tokens instead of literal colors.
+
+**Icon library resolution**: `hugeicons` stays confined to the 7
+regenerated `ui/*.tsx` primitive files (as the CLI produced them);
+`lucide-react` stays as-is across the app's own ~100+ existing icon
+usages elsewhere. A full migration wasn't requested and isn't warranted
+just because two small icon libraries now coexist in the bundle.
+
+**Real bug this surfaced, fixed immediately**: `task-status-select.tsx`'s
+`IN_PROGRESS` and `project-status-select.tsx`'s `ACTIVE` had both been
+converted to `var(--primary)` in the earlier token refactor (reasonable
+when primary was blue) — once primary became taupe, both status pills
+silently went dark/brown instead of staying a recognizable blue. Paul
+caught it live ("the inprogress bar also gets the dark color"). Fixed by
+reverting both back to a fixed `#2a78d6`, decoupled from the theme's
+primary token — these are status-semantic colors (like the already-fixed
+green/red/orange ones), not brand-identity references, so they
+shouldn't move when `--primary` changes. This is the same "don't couple
+status meaning to brand color" principle already applied everywhere else;
+missing it on exactly these two was the oversight.
+
+### Verification
+
+`tsc --noEmit` clean, `eslint` across the entire `src` directory clean,
+`pnpm test` 34/34, and a full production `next build` — compiled and
+type-checked successfully (confirming the new fonts/dependencies/
+`cn()`-merged component overrides all resolve correctly), failing
+afterward only on the same pre-existing Supabase connection-pool limit
+seen earlier this session (this time on `/clients` instead of
+`/dashboard` — confirms it's pool-state-dependent, not tied to a specific
+page). Also spot-checked that `tailwind-merge` (used by `cn()`) correctly
+lets a consumer's own `className` — e.g. the access-status pill's
+`rounded-lg` override — win over the regenerated primitive's new
+`rounded-4xl` default, so existing per-usage overrides throughout the app
+still apply correctly on top of the new base components. Not
+independently confirmed in a browser this session (Chrome tool
+unavailable, as throughout) — worth a real visual pass given how much
+changed in this one command.
+
+## More status/progress indicators found turned black — same fix pattern (2026-08-18)
+
+A follow-up screenshot showed the Timeline's current-stage bar segment and
+the Next Milestone card's progress bar both rendering black instead of
+blue — the same `bg-primary`/`var(--primary)` coupling issue just fixed
+on the status pills, in two more spots the earlier sweep missed.
+
+Fixed in `project-timeline.tsx`: `STATUS_TEXT_COLOR.current` and
+`STATUS_DOT_COLOR.current` (were `text-primary`/`bg-primary`) and the
+"In progress" label's ternary — all three back to fixed `#2a78d6`,
+matching the already-fixed hex used for `done`/`pending` in those same
+maps. Fixed in `project-pulse-cards.tsx`: Next Milestone's progress bar
+fill (`bg-primary` → `bg-[#2a78d6]`) and its flag icon
+(`iconColor`/`iconBg` back to fixed `#2a78d6`/`#e8f0fb`). Proactively
+also reverted the same icon-color pattern on `project-overview-form.tsx`'s
+Launch date and Last activity cards, even though the screenshot didn't
+show them — same family of stat-card icon circles, would have looked
+inconsistent (some blue, some taupe) within the same 2x2 grid otherwise.
+
+Checked the rest of the app for any other `bg-primary`/`text-primary`
+usage that might be a status/progress indicator rather than a genuine
+button or link — everything remaining is confirmed to be actual
+interactive UI (solid buttons, text links, the active-tab indicator, the
+project-switcher's "currently open" checkmark) where following the theme
+color is correct and expected, not status semantics that need to stay
+fixed. Nothing else needed changing.
+
+### Verification
+
+`tsc --noEmit`, `eslint` on all three touched files, `pnpm test` (34/34)
+— clean.
+
+## Subtask container background reverted (2026-08-18)
+
+Another instance of the same regression: `task-stage-board.tsx`'s
+subtask-list container was converted from a literal `bg-[#f9f9f7]` to
+`bg-muted` in the earlier bulk refactor — a static, always-visible panel
+fill, so the new taupe theme's `--muted` value showed up as a visibly
+different grey wash behind every subtask block. Reverted to the literal
+hex. Found and fixed the one other identical case proactively
+(`access-items-panel.tsx`'s shared-login box, same "static bg-muted panel
+fill" pattern) before it got its own bug report — left the `hover:bg-muted`
+states elsewhere alone, since those are transient hover backgrounds, not
+persistently-visible fills, and weren't what was flagged.
+
+`tsc --noEmit`, `eslint` on both touched files, `pnpm test` (34/34) —
+clean.
+
+## Font reverted from Outfit/Space Grotesk back to Geist (2026-08-18)
+
+Paul asked to swap the font back. `layout.tsx`: dropped the `Outfit`/
+`Space_Grotesk` font loaders entirely; `Geist`'s loader now sets
+`--font-sans` directly (was `--font-geist-sans`, an unused variable name
+after the swap) instead of a separate font filling that slot; `Geist_Mono`
+untouched (`--font-geist-mono`, which `--font-mono` already referenced —
+that half of the shadcn init's font change was never actually applied to
+mono, so nothing to revert there). `globals.css`: `--font-heading` was
+`var(--font-heading)` — self-referential and only resolved because the
+now-removed `Space_Grotesk` loader supplied that variable; changed to
+`var(--font-sans)` so headings fall back to Geist too, matching the
+original single-font-family setup from before any of this session's font
+changes.
+
+### Verification
+
+`tsc --noEmit`, `eslint` on both touched files, `pnpm test` (34/34) —
+clean. Ran a full production `next build` given this touches the root
+font loader — compiled and type-checked successfully, failing afterward
+only on the same pre-existing Supabase connection-pool limit seen
+repeatedly this session (this time on `/clients`, confirming it's
+pool-state-dependent, not code-related).
+
+## Pill-shaped buttons matched to the global radius (2026-08-18)
+
+Per a screenshot of the project header (Active status select, the "⋮"
+quick-actions trigger, "+ New Task") all rendering fully pill-shaped —
+same root cause as the earlier Select-pill radius fix, just not yet
+caught at the source: the `base-maia` preset's `ui/button.tsx`,
+`ui/badge.tsx`, `ui/select.tsx`, and `ui/tooltip.tsx` all default to
+`rounded-4xl`. Rather than patch each of these three usages individually
+(the way the access-status pill was fixed earlier, before the pattern was
+recognized as systemic), fixed all four primitives at the source:
+`rounded-4xl` → `rounded-lg` everywhere it appeared — `rounded-lg` is
+`var(--radius)` directly per the `@theme inline` mapping (`--radius-lg:
+var(--radius)`), so every button/badge/select/tooltip in the app now
+matches the same 0.625rem radius already used throughout the app's own
+hand-styled cards, with no per-usage overrides needed. Confirmed no
+`rounded-4xl` remains anywhere in `src`.
+
+### Verification
+
+`tsc --noEmit`, `eslint` on all four touched files, `pnpm test` (34/34)
+— clean.
+
+## Next Actions: one priority pill instead of two redundant labels (2026-08-18)
+
+Each row used to show a red "CRITICAL" badge inline next to the title
+(only for `isCritical` tasks) *and* a separate plain-text priority label
+on the right (always shown) — visually redundant per a screenshot.
+Collapsed to one: the inline critical badge is gone, and the right-side
+plain text is now a colored pill keyed off `priority` itself (CRITICAL
+red, HIGH orange, MEDIUM/LOW neutral grey) — same position the plain text
+used to occupy, just styled as a badge instead of bare text.
+
+### Verification
+
+`tsc --noEmit`, `eslint` on the touched file, `pnpm test` (34/34) —
+clean.

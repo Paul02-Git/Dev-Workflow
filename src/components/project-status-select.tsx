@@ -14,7 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  ACTIVE: "var(--primary)",
+  ACTIVE: "#2a78d6",
   ON_HOLD: "#c9720a",
   LAUNCHED: "#0ca30c",
   ARCHIVED: "#898781",

@@ -28,6 +28,7 @@ export function IconStatCard({
   label,
   action,
   children,
+  iconSize = "h-6 w-6",
 }: {
   icon: React.ReactNode;
   iconColor: string;
@@ -35,13 +36,15 @@ export function IconStatCard({
   label: string;
   action?: React.ReactNode;
   children: React.ReactNode;
+  /** Container size classes for the icon circle — defaults to the size used everywhere this card already appears (project page Pulse/Overview). Dashboard's stat row opts into a bigger one. */
+  iconSize?: string;
 }) {
   return (
     <Card className="min-w-0 gap-2 p-3.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+            className={`flex shrink-0 items-center justify-center rounded-full ${iconSize}`}
             style={{ backgroundColor: iconBg, color: iconColor }}
           >
             {icon}
@@ -70,7 +73,13 @@ export function ProjectPulseCards({ summary }: { summary: ProjectPulseSummary })
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {/* Card 1 — Project Pulse: overall health at a glance */}
-      <IconStatCard icon={<ActivityIcon className="size-3.5" />} iconColor={health.color} iconBg={health.bg} label="Project Pulse">
+      <IconStatCard
+        icon={<ActivityIcon className="size-5" />}
+        iconColor={health.color}
+        iconBg={health.bg}
+        label="Project Pulse"
+        iconSize="h-9 w-9"
+      >
         <div className="text-2xl font-bold" style={{ color: health.color }}>
           {summary.healthScore}%
         </div>
@@ -82,12 +91,34 @@ export function ProjectPulseCards({ summary }: { summary: ProjectPulseSummary })
         </div>
       </IconStatCard>
 
-      {/* Card 2 — Needs Attention: what could slow this project down, preview only */}
+      {/* Card 2 — Next Milestone: what comes next */}
       <IconStatCard
-        icon={criticalIssues > 0 ? <AlertTriangleIcon className="size-3.5" /> : <CheckCircle2Icon className="size-3.5" />}
+        icon={<FlagIcon className="size-5" />}
+        iconColor="#2a78d6"
+        iconBg="#e8f0fb"
+        label="Next Milestone"
+        iconSize="h-9 w-9"
+      >
+        <div className="truncate text-xl font-bold text-foreground">{summary.milestoneName ?? "Complete"}</div>
+        {summary.milestonePercent !== null ? (
+          <>
+            <div className="text-xs text-muted-foreground">{summary.milestonePercent}% complete</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
+              <div className="h-full rounded-full bg-[#2a78d6]" style={{ width: `${summary.milestonePercent}%` }} />
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-muted-foreground">No stages yet</div>
+        )}
+      </IconStatCard>
+
+      {/* Card 3 — Needs Attention: what could slow this project down, preview only */}
+      <IconStatCard
+        icon={criticalIssues > 0 ? <AlertTriangleIcon className="size-5" /> : <CheckCircle2Icon className="size-5" />}
         iconColor={criticalIssues > 0 ? "#c9720a" : "#0ca30c"}
         iconBg={criticalIssues > 0 ? "#fef4de" : "#eafaea"}
         label="Needs Attention"
+        iconSize="h-9 w-9"
       >
         <div className="text-2xl font-bold" style={{ color: criticalIssues > 0 ? "#c9720a" : "#0ca30c" }}>
           {criticalIssues}
@@ -110,30 +141,23 @@ export function ProjectPulseCards({ summary }: { summary: ProjectPulseSummary })
         )}
       </IconStatCard>
 
-      {/* Card 3 — Next Milestone: what comes next */}
-      <IconStatCard icon={<FlagIcon className="size-3.5" />} iconColor="var(--primary)" iconBg="color-mix(in oklch, var(--primary) 15%, white)" label="Next Milestone">
-        <div className="truncate text-xl font-bold text-foreground">{summary.milestoneName ?? "Complete"}</div>
-        {summary.milestonePercent !== null ? (
-          <>
-            <div className="text-xs text-muted-foreground">{summary.milestonePercent}% complete</div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${summary.milestonePercent}%` }} />
-            </div>
-          </>
-        ) : (
-          <div className="text-xs text-muted-foreground">No stages yet</div>
-        )}
-      </IconStatCard>
-
       {/* Card 4 — Launch Countdown: urgency */}
-      <IconStatCard icon={<RocketIcon className="size-3.5" />} iconColor={launch.color} iconBg={launch.bg} label="Launch Countdown">
+      <IconStatCard
+        icon={<RocketIcon className="size-5" />}
+        iconColor={launch.color}
+        iconBg={launch.bg}
+        label="Launch Countdown"
+        iconSize="h-9 w-9"
+        action={
+          <Badge className="shrink-0" style={{ backgroundColor: launch.bg, color: launch.color }}>
+            {launch.status}
+          </Badge>
+        }
+      >
         <div className="text-2xl font-bold" style={{ color: launch.color }}>
           {launch.value}
         </div>
         <div className="text-xs text-muted-foreground">{launch.sub}</div>
-        <Badge className="w-fit" style={{ backgroundColor: launch.bg, color: launch.color }}>
-          {launch.status}
-        </Badge>
       </IconStatCard>
     </div>
   );

@@ -7,7 +7,7 @@ const STATUSES = ["TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE", "SKIPPED"]
 
 export const STATUS_COLORS: Record<string, string> = {
   TODO: "#898781",
-  IN_PROGRESS: "var(--primary)",
+  IN_PROGRESS: "#2a78d6",
   BLOCKED: "#d03b3b",
   REVIEW: "#eda100",
   DONE: "#0ca30c",
