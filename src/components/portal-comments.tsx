@@ -199,7 +199,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
                       <span className="shrink-0 text-muted-foreground">{formatFileSize(m.attachment.fileSize)}</span>
                     </a>
                   ) : (
-                    <div className={`max-w-full rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
+                    <div className={`max-w-full whitespace-pre-wrap break-words rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
                       {m.body}
                     </div>
                   )}
