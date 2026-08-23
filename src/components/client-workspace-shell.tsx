@@ -1,7 +1,9 @@
 "use client";
 
 import { type ReactNode } from "react";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { clientLogoutAction } from "@/lib/actions";
 
 /**
  * Sidebar shell for the public Client Workspace (/portal/[token]) — same
@@ -37,11 +39,14 @@ export function ClientWorkspaceShell({
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card p-4">
-        <div className="mb-4 border-b border-border pb-3">
-          <div className="text-sm font-semibold leading-tight">
-            DEV<span className="text-primary">OS</span>
+        <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
+          <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
+          <div>
+            <div className="text-sm font-semibold leading-tight">
+              DEV<span className="text-primary">OS</span>
+            </div>
+            <div className="text-xs text-muted-foreground">Client workspace</div>
           </div>
-          <div className="text-xs text-muted-foreground">Client workspace</div>
         </div>
         <nav className="space-y-1">
           {tabs.map((tab, i) => (
@@ -68,9 +73,21 @@ export function ClientWorkspaceShell({
             </button>
           ))}
         </nav>
-        <p className="mt-auto pt-3 text-[11px] text-muted-foreground">
-          This link is private to you — only people who have it can view or add to it.
-        </p>
+        <div className="mt-auto pt-3">
+          <p className="mb-3 text-[11px] text-muted-foreground">
+            This link is private to you — only people who have it can view or add to it.
+          </p>
+          <div className="border-t border-border pt-3">
+            <form action={clientLogoutAction}>
+              <button
+                type="submit"
+                className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
       </aside>
       <main className="min-w-0 flex-1 p-8">
         {tabs.map((tab, i) => (

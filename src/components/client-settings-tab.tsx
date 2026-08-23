@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { updateClientPortalInfoAction, clientLogoutAction } from "@/lib/actions";
+import { updateClientPortalInfoAction } from "@/lib/actions";
 
 type ClientInfo = {
   name: string;
@@ -55,19 +55,14 @@ export function ClientSettingsTab({ loginSlug, client }: { loginSlug: string | n
         </form>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 text-sm font-bold">Account</h2>
-        {loginSlug && (
-          <p className="mb-3 text-sm">
+      {loginSlug && (
+        <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+          <h2 className="mb-3 text-sm font-bold">Account</h2>
+          <p className="text-sm">
             You log in as <strong className="font-bold">{loginSlug}</strong>. Ask Paul for a password reset link if you forget it.
           </p>
-        )}
-        <form action={clientLogoutAction}>
-          <button type="submit" className="rounded-md border border-black/15 px-4 py-2 text-sm font-semibold text-muted-foreground hover:border-[#d03b3b] hover:text-[#d03b3b]">
-            Sign out
-          </button>
-        </form>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
