@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   uploadProjectFileAction,
   removeTaskAttachmentAction,
@@ -14,6 +14,8 @@ type ProjectFile = {
   url: string | null;
   label: string | null;
   fileSize: number | null;
+  uploadedByClient: boolean;
+  viaChat: boolean;
   createdAt: Date | string;
   taskTitle: string | null;
 };
@@ -57,7 +59,10 @@ function FileThumbnail({ url, label }: { url: string | null; label: string | nul
   return <FileKindIcon label={label} />;
 }
 
+const POLL_INTERVAL_MS = 8000;
+
 export function FilesTab({ projectId, files }: { projectId: string; files: ProjectFile[] }) {
+  const [liveFiles, setLiveFiles] = useState(files);
   const [, startTransition] = useTransition();
   const [dragOver, setDragOver] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ done: number; total: number } | null>(null);
@@ -66,6 +71,40 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
   const [replacingId, setReplacingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  // Adjusting state during render (React's documented pattern) rather than
+  // a useEffect when the initial `files` prop changes.
+  const [prevFiles, setPrevFiles] = useState(files);
+  if (files !== prevFiles) {
+    setPrevFiles(files);
+    setLiveFiles(files);
+  }
+
+  async function refetch() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/files`, { cache: "no-store" });
+      if (res.ok) setLiveFiles(await res.json());
+    } catch (err) {
+      console.error("Files refetch failed:", err);
+    }
+  }
+
+  // Polls a plain REST route so a file uploaded via the Comments thread
+  // shows up here without a manual reload — same mechanism (and same
+  // reasoning) as the Messages tab's polling.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/files`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`poll failed: ${res.status}`);
+        const fresh: ProjectFile[] = await res.json();
+        setLiveFiles((current) => (fresh.length !== current.length ? fresh : current));
+      } catch (err) {
+        console.error("Files poll failed:", err);
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [projectId]);
 
   // Uploaded one at a time, not all at once — this app's Supabase pooler
   // caps at 15 concurrent connections, and dropping a big batch as
@@ -85,6 +124,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
         setUploadStatus({ done: i + 1, total: queued.length });
       }
       setUploadStatus(null);
+      await refetch();
     });
   };
 
@@ -98,7 +138,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
   };
 
   const toggleSelectAll = () => {
-    setSelected((prev) => (prev.size === files.length ? new Set() : new Set(files.map((f) => f.id))));
+    setSelected((prev) => (prev.size === liveFiles.length ? new Set() : new Set(liveFiles.map((f) => f.id))));
   };
 
   const handleBulkDelete = () => {
@@ -110,6 +150,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
       await bulkRemoveAttachmentsAction(ids);
       setSelected(new Set());
       setDeleting(false);
+      await refetch();
     });
   };
 
@@ -142,7 +183,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
           <p className="text-sm">
             {uploadStatus ? `Uploading ${uploadStatus.done}/${uploadStatus.total}…` : "Click to upload or drag and drop"}
           </p>
-          <p className="text-[11px] text-muted-foreground">max: 10MB</p>
+          <p className="text-xs text-muted-foreground">max: 10MB</p>
           <input
             ref={inputRef}
             type="file"
@@ -170,12 +211,15 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
             const formData = new FormData();
             formData.set("attachmentId", replacingId);
             formData.set("file", file);
-            startTransition(() => replaceAttachmentAction(formData));
+            startTransition(async () => {
+              await replaceAttachmentAction(formData);
+              await refetch();
+            });
             setReplacingId(null);
           }}
         />
 
-        {files.length === 0 ? (
+        {liveFiles.length === 0 ? (
           <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">No files yet.</div>
         ) : (
           <>
@@ -183,7 +227,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
-                  checked={selected.size === files.length}
+                  checked={selected.size === liveFiles.length}
                   onChange={toggleSelectAll}
                   className="cursor-pointer"
                 />
@@ -205,7 +249,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
             </div>
 
             <div className="divide-y divide-border">
-              {files.map((f) => (
+              {liveFiles.map((f) => (
                 <div key={f.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                   <div className="flex min-w-0 items-center gap-3">
                     <input
@@ -231,10 +275,16 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
                           {f.label || "Untitled file"} (unavailable)
                         </span>
                       )}
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         {[
                           formatFileSize(f.fileSize),
-                          f.taskTitle ? `via ${f.taskTitle}` : "Project file",
+                          f.uploadedByClient
+                            ? "Uploaded by client"
+                            : f.viaChat
+                              ? "via Comments"
+                              : f.taskTitle
+                                ? `via ${f.taskTitle}`
+                                : "Project file",
                           new Date(f.createdAt).toLocaleDateString(),
                         ]
                           .filter(Boolean)
@@ -257,7 +307,12 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
                     </button>
                     <button
                       type="button"
-                      onClick={() => startTransition(() => removeTaskAttachmentAction(f.id))}
+                      onClick={() =>
+                        startTransition(async () => {
+                          await removeTaskAttachmentAction(f.id);
+                          await refetch();
+                        })
+                      }
                       className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
                       aria-label={`Remove ${f.label ?? "file"}`}
                     >

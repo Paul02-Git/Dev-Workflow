@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/db/client";
 import {
   projects,
@@ -13,10 +14,11 @@ import {
   taskTags,
   attachments,
   accessItems,
+  projectMessages,
 } from "@/db/schema";
-import { eq, desc, inArray, and, or, isNull, sql, ne } from "drizzle-orm";
+import { eq, desc, inArray, and, or, isNull, isNotNull, sql, ne } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { deleteStorageObjects } from "@/lib/storage";
+import { deleteStorageObjects, getSignedAttachmentUrl } from "@/lib/storage";
 import { generateWorkflow } from "@/lib/workflow-engine/generate-workflow";
 import { computeEffectiveStatuses } from "@/lib/workflow-engine/blocked-status";
 import { computeHealthScore } from "@/lib/health/health-score";
@@ -24,6 +26,8 @@ import { checkProject, type TaskLookup } from "@/lib/health/forgotten-task-rules
 import { accessItemPresetsForTechnologies } from "@/data/access-item-presets";
 import { CLIENT_ACTION_CANONICAL_KEYS } from "@/data/client-action-keys";
 import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
+import { CLIENT_PORTAL_PHASES } from "@/data/client-portal-phases";
+import { withTimeout } from "@/lib/with-timeout";
 
 export async function listProjects() {
   const rows = await db
@@ -34,6 +38,9 @@ export async function listProjects() {
       status: projects.status,
       healthScore: projects.healthScore,
       launchReady: projects.launchReady,
+      domain: projects.domain,
+      targetLaunchDate: projects.targetLaunchDate,
+      launchedAt: projects.launchedAt,
       createdAt: projects.createdAt,
       clientId: clients.id,
       clientName: clients.name,
@@ -51,7 +58,13 @@ export async function listProjects() {
  * consumers need — no health score or dates, just enough to render a
  * dropdown row and navigate.
  */
-export async function listProjectsForSwitcher() {
+// Wrapped in React's cache() — this fires from both the layout (every
+// page) and the dashboard page itself in the same request, and the two
+// calls were previously each doing their own round-trip. cache() only
+// dedupes calls within a single request's render, never persists across
+// requests, so it can never serve stale data — a fresh request always
+// runs the real query at least once.
+export const listProjectsForSwitcher = cache(async () => {
   const [projectRows, techRows] = await Promise.all([
     db
       .select({
@@ -79,7 +92,7 @@ export async function listProjectsForSwitcher() {
   }
 
   return projectRows.map((p) => ({ ...p, technologyNames: techNamesByProject.get(p.id) ?? [] }));
-}
+});
 
 /**
  * Deletes a project and everything under it. All child tables (tasks,
@@ -295,29 +308,61 @@ export async function createProjectWithWorkflow(input: {
 }
 
 export async function getProjectDetail(projectId: string) {
-  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  // Two parallel "waves" instead of ~7 queries run one at a time — every
+  // query here that only needs projectId (not something from an earlier
+  // query's result) fires together. This used to be fully sequential,
+  // which was fine on the old session pooler but got materially slower
+  // once the DB moved to the transaction pooler (real, measured: ~2s for
+  // this function alone on a mid-size project, dominated by round-trip
+  // count, not query cost).
+  const [projectRows, projectStageRows, taskRows, techRows] = await withTimeout(
+    Promise.all([
+      db.select().from(projects).where(eq(projects.id, projectId)),
+      db
+        .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
+        .from(projectStages)
+        .innerJoin(stages, eq(projectStages.stageId, stages.id))
+        .where(eq(projectStages.projectId, projectId))
+        .orderBy(projectStages.sortOrder),
+      db.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(tasks.sortOrder),
+      db
+        .select({ name: technologies.name })
+        .from(projectTechnologies)
+        .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
+        .where(eq(projectTechnologies.projectId, projectId)),
+    ]),
+    8000,
+    "getProjectDetail wave 1"
+  );
+  const [project] = projectRows;
   if (!project) return null;
 
-  const [client] = await db.select().from(clients).where(eq(clients.id, project.clientId));
-
-  const projectStageRows = await db
-    .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
-    .from(projectStages)
-    .innerJoin(stages, eq(projectStages.stageId, stages.id))
-    .where(eq(projectStages.projectId, projectId))
-    .orderBy(projectStages.sortOrder);
-
-  const taskRows = await db
-    .select()
-    .from(tasks)
-    .where(eq(tasks.projectId, projectId))
-    .orderBy(tasks.sortOrder);
-
   const taskIds = taskRows.map((t) => t.id);
-  const depRows =
+
+  const [client, depRows, tagRows, attachmentRows] = await withTimeout(
+    Promise.all([
+    db
+      .select()
+      .from(clients)
+      .where(eq(clients.id, project.clientId))
+      .then((r) => r[0]),
     taskIds.length > 0
-      ? await db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, taskIds))
-      : [];
+      ? db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, taskIds))
+      : Promise.resolve([]),
+    taskIds.length > 0
+      ? db
+          .select({ taskId: taskTags.taskId, tagId: tags.id, tagName: tags.name })
+          .from(taskTags)
+          .innerJoin(tags, eq(taskTags.tagId, tags.id))
+          .where(inArray(taskTags.taskId, taskIds))
+      : Promise.resolve([]),
+    taskIds.length > 0
+      ? db.select().from(attachments).where(inArray(attachments.taskId, taskIds))
+      : Promise.resolve([]),
+    ]),
+    8000,
+    "getProjectDetail wave 2"
+  );
 
   const effective = computeEffectiveStatuses(
     taskRows.map((t) => ({ id: t.id, status: t.status })),
@@ -328,23 +373,6 @@ export async function getProjectDetail(projectId: string) {
     taskRows.map((t) => ({ status: t.status, isCritical: t.isCritical, dueDate: t.dueDate })),
     taskRows.map((t) => effective.get(t.id) ?? t.status)
   );
-
-  const [tagRows, attachmentRows] =
-    taskIds.length > 0
-      ? await Promise.all([
-          db
-            .select({ taskId: taskTags.taskId, tagId: tags.id, tagName: tags.name })
-            .from(taskTags)
-            .innerJoin(tags, eq(taskTags.tagId, tags.id))
-            .where(inArray(taskTags.taskId, taskIds)),
-          db.select().from(attachments).where(inArray(attachments.taskId, taskIds)),
-        ])
-      : [[], []];
-  const techRows = await db
-    .select({ name: technologies.name })
-    .from(projectTechnologies)
-    .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
-    .where(eq(projectTechnologies.projectId, projectId));
 
   const tagsByTask = new Map<string, { id: string; name: string }[]>();
   for (const r of tagRows) {
@@ -546,15 +574,17 @@ export async function addTaskAttachment(taskId: string, input: { url: string; la
  * Handles both task-scoped and project-scoped attachments (exactly one of
  * taskId/projectId is set). Deletes the underlying Supabase Storage object
  * too when there is one (uploaded files, not pasted links) — otherwise a
- * deleted attachment's file just sits in the bucket forever.
+ * deleted attachment's file just sits in the bucket forever. A real,
+ * immediate delete regardless of who triggers it (Paul internally, or a
+ * client via deleteClientFileAction) — removes it for both sides.
  */
 export async function removeTaskAttachment(attachmentId: string) {
   const [row] = await db
     .select({ taskId: attachments.taskId, projectId: attachments.projectId, storagePath: attachments.storagePath })
     .from(attachments)
     .where(eq(attachments.id, attachmentId));
-  await db.delete(attachments).where(eq(attachments.id, attachmentId));
   if (!row) return null;
+  await db.delete(attachments).where(eq(attachments.id, attachmentId));
   if (row.storagePath) await deleteStorageObjects([row.storagePath]);
   if (row.projectId) return row.projectId;
   return row.taskId ? getTaskProjectId(row.taskId) : null;
@@ -588,6 +618,12 @@ export async function bulkRemoveAttachments(attachmentIds: string[]): Promise<st
   return Array.from(projectIds);
 }
 
+/** Looks up which project an attachment belongs to — used to authorize a client's delete request before touching anything. */
+export async function getAttachmentProjectId(attachmentId: string): Promise<string | null> {
+  const [row] = await db.select({ projectId: attachments.projectId }).from(attachments).where(eq(attachments.id, attachmentId));
+  return row?.projectId ?? null;
+}
+
 /**
  * Flat task list across every project, with effective (dependency-aware)
  * status computed per-project and joined project/client/stage context.
@@ -599,11 +635,13 @@ export async function listAllTasks() {
       id: tasks.id,
       projectId: tasks.projectId,
       parentTaskId: tasks.parentTaskId,
+      canonicalKey: tasks.canonicalKey,
       title: tasks.title,
       status: tasks.status,
       priority: tasks.priority,
       isCritical: tasks.isCritical,
       dueDate: tasks.dueDate,
+      completedAt: tasks.completedAt,
       assignee: tasks.assignee,
       isWaitingOnClient: tasks.isWaitingOnClient,
       waitingOnClientSince: tasks.waitingOnClientSince,
@@ -714,6 +752,17 @@ const ESTIMATE_MINUTES: Record<string, number> = { CRITICAL: 45, HIGH: 30, MEDIU
 
 type AllTasksRow = Awaited<ReturnType<typeof listAllTasks>>[number];
 
+// Which project-page tab a task's stage actually renders under — QA and
+// Launch/Handoff/Post-Launch are both separate tabs from the rest of the
+// board (see the project page's own buildStages/qaStages/launchStages),
+// so a task in either group must route there, not to the Tasks tab.
+const LAUNCH_GROUP_STAGE_KEYS = new Set(["launch", "handoff", "post_launch"]);
+function tabSlugForStageKey(stageKey: string): "tasks" | "qa" | "launch" {
+  if (stageKey === "qa") return "qa";
+  if (LAUNCH_GROUP_STAGE_KEYS.has(stageKey)) return "launch";
+  return "tasks";
+}
+
 export type ActionQueueItem = {
   taskId: string;
   title: string;
@@ -722,9 +771,9 @@ export type ActionQueueItem = {
   priority: string;
   isCritical: boolean;
   estimateMinutes: number;
-  // Which project tab this task actually lives in — QA is a separate tab
-  // from the rest of the board, so a QA-stage task must route there.
-  tabSlug: "tasks" | "qa";
+  // Which project tab this task actually lives in — QA and Launch/Handoff/
+  // Post-Launch are each their own tab, separate from the rest of the board.
+  tabSlug: "tasks" | "qa" | "launch";
 };
 
 /**
@@ -758,7 +807,7 @@ export function deriveActionQueue(allTasks: AllTasksRow[]): ActionQueueItem[] {
     priority: t.priority,
     isCritical: t.isCritical,
     estimateMinutes: ESTIMATE_MINUTES[t.priority] ?? 20,
-    tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
+    tabSlug: tabSlugForStageKey(t.stageKey),
   }));
 }
 
@@ -767,10 +816,9 @@ export type WaitingOnClientProjectSummary = {
   projectName: string;
   taskTitle: string;
   waitingOnClientSince: Date | string | null;
-  // Which project tab this task actually lives in — QA is a separate tab
-  // from the rest of the board, so a QA-stage task must route there, not
-  // to the (empty, for it) Tasks tab.
-  tabSlug: "tasks" | "qa";
+  // Which project tab this task actually lives in — QA and Launch/Handoff/
+  // Post-Launch are each their own tab, not the (empty, for them) Tasks tab.
+  tabSlug: "tasks" | "qa" | "launch";
 };
 
 /** One row per project — the longest-waiting flagged task is shown as the reason, oldest first. */
@@ -791,7 +839,7 @@ export function deriveWaitingOnClient(allTasks: AllTasksRow[]): WaitingOnClientP
       projectName: t.projectName,
       taskTitle: t.title,
       waitingOnClientSince: t.waitingOnClientSince,
-      tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
+      tabSlug: tabSlugForStageKey(t.stageKey),
     });
   }
   return Array.from(byProject.values());
@@ -801,9 +849,9 @@ export type BlockedProjectSummary = {
   projectId: string;
   projectName: string;
   taskTitle: string;
-  // Which project tab this task actually lives in — QA is a separate tab
-  // from the rest of the board, so a QA-stage task must route there.
-  tabSlug: "tasks" | "qa";
+  // Which project tab this task actually lives in — QA and Launch/Handoff/
+  // Post-Launch are each their own tab, separate from the rest of the board.
+  tabSlug: "tasks" | "qa" | "launch";
 };
 
 /** One row per active project with at least one dependency-blocked top-level task, showing that task as the reason. */
@@ -816,7 +864,7 @@ export function deriveBlockedProjects(allTasks: AllTasksRow[]): BlockedProjectSu
       projectId: t.projectId,
       projectName: t.projectName,
       taskTitle: t.title,
-      tabSlug: t.stageKey === "qa" ? "qa" : "tasks",
+      tabSlug: tabSlugForStageKey(t.stageKey),
     });
   }
   return Array.from(byProject.values());
@@ -862,6 +910,142 @@ export function deriveReadyToLaunch(allTasks: AllTasksRow[]): ReadyToLaunchSumma
   return deriveLaunchReadinessRanking(allTasks).filter((r) => r.launchScorePercent >= READY_TO_LAUNCH_THRESHOLD);
 }
 
+export type OverdueLaunchSummary = {
+  projectId: string;
+  projectName: string;
+  clientName: string;
+  targetLaunchDate: Date | string;
+  daysOverdue: number;
+  criticalDone: number;
+  criticalTotal: number;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Active projects whose target launch date has already passed while the
+ * critical (launch-checklist) tasks still aren't all done — the dashboard's
+ * "Launch overdue" banner. A project with zero critical tasks is trivially
+ * "complete" (nothing to check off) and isn't flagged, same as a project
+ * with no `targetLaunchDate` set at all.
+ */
+export function deriveOverdueLaunches(
+  allTasks: AllTasksRow[],
+  projects: { id: string; name: string; clientName: string; status: string; targetLaunchDate: Date | string | null }[]
+): OverdueLaunchSummary[] {
+  const criticalByProject = new Map<string, { done: number; total: number }>();
+  for (const t of allTasks) {
+    if (t.parentTaskId || !t.isCritical) continue;
+    const entry = criticalByProject.get(t.projectId) ?? { done: 0, total: 0 };
+    entry.total += 1;
+    if (t.effectiveStatus === "DONE") entry.done += 1;
+    criticalByProject.set(t.projectId, entry);
+  }
+
+  const now = Date.now();
+  const results: OverdueLaunchSummary[] = [];
+  for (const p of projects) {
+    if (p.status !== "ACTIVE" || !p.targetLaunchDate) continue;
+    const targetTime = new Date(p.targetLaunchDate).getTime();
+    if (targetTime > now) continue;
+    const critical = criticalByProject.get(p.id);
+    if (!critical || critical.total === 0 || critical.done >= critical.total) continue;
+    results.push({
+      projectId: p.id,
+      projectName: p.name,
+      clientName: p.clientName,
+      targetLaunchDate: p.targetLaunchDate,
+      daysOverdue: Math.floor((now - targetTime) / DAY_MS),
+      criticalDone: critical.done,
+      criticalTotal: critical.total,
+    });
+  }
+  return results.sort((a, b) => b.daysOverdue - a.daysOverdue);
+}
+
+export type ProjectCardSummary = {
+  tasksDone: number;
+  tasksTotal: number;
+  criticalDone: number;
+  criticalTotal: number;
+  blockedTaskTitle: string | null;
+  waitingTaskTitle: string | null;
+  nextAction: { title: string; priority: string; isCritical: boolean } | null;
+  issues: { id: string; message: string }[];
+};
+
+/**
+ * One summary per project for the `/projects` grid — reuses the same
+ * single cross-project `listAllTasks()` scan every other cross-project view
+ * already does (Tasks/Today/QA/dashboard), rather than calling
+ * `getProjectDetail()` once per project (an N+1 pattern that's expensive
+ * enough on its own, and directly the kind of concurrent-query burst that
+ * exhausted the DB connection pool before — see with-timeout.ts). Every
+ * status here (not just ACTIVE) gets a summary, unlike the dashboard's
+ * derive* helpers which only look at active projects.
+ */
+export function deriveProjectCardSummaries(
+  allTasks: AllTasksRow[],
+  projectCreatedAtById: Map<string, Date | string>
+): Map<string, ProjectCardSummary> {
+  const byProject = new Map<string, AllTasksRow[]>();
+  for (const t of allTasks) {
+    if (!byProject.has(t.projectId)) byProject.set(t.projectId, []);
+    byProject.get(t.projectId)!.push(t);
+  }
+
+  const result = new Map<string, ProjectCardSummary>();
+  for (const [projectId, projectTasks] of byProject) {
+    const topLevel = projectTasks.filter((t) => !t.parentTaskId);
+    const tasksDone = topLevel.filter((t) => t.effectiveStatus === "DONE").length;
+    const critical = topLevel.filter((t) => t.isCritical);
+    const criticalDone = critical.filter((t) => t.effectiveStatus === "DONE").length;
+
+    const blocked = topLevel.find((t) => t.effectiveStatus === "BLOCKED");
+
+    const waiting = projectTasks
+      .filter((t) => t.isWaitingOnClient && t.status !== "DONE" && t.status !== "SKIPPED")
+      .sort((a, b) => {
+        const aTime = a.waitingOnClientSince ? new Date(a.waitingOnClientSince).getTime() : 0;
+        const bTime = b.waitingOnClientSince ? new Date(b.waitingOnClientSince).getTime() : 0;
+        return aTime - bTime;
+      })[0];
+
+    const actionable = topLevel
+      .filter((t) => t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED" && t.effectiveStatus !== "BLOCKED")
+      .sort((a, b) => {
+        if (a.isCritical !== b.isCritical) return a.isCritical ? -1 : 1;
+        return (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
+      });
+    const next = actionable[0];
+
+    const byCanonicalKey = new Map(projectTasks.filter((t) => t.canonicalKey).map((t) => [t.canonicalKey!, t]));
+    const createdAt = projectCreatedAtById.get(projectId);
+    const now = Date.now();
+    const lookup: TaskLookup = {
+      status: (key) => byCanonicalKey.get(key)?.status,
+      daysSince: (key) => {
+        const task = byCanonicalKey.get(key);
+        const anchor = task?.completedAt ?? createdAt;
+        if (!task || !anchor) return null;
+        return Math.floor((now - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24));
+      },
+    };
+
+    result.set(projectId, {
+      tasksDone,
+      tasksTotal: topLevel.length,
+      criticalDone,
+      criticalTotal: critical.length,
+      blockedTaskTitle: blocked?.title ?? null,
+      waitingTaskTitle: waiting?.title ?? null,
+      nextAction: next ? { title: next.title, priority: next.priority, isCritical: next.isCritical } : null,
+      issues: checkProject(lookup),
+    });
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Client-facing handoff page
 // ---------------------------------------------------------------------------
@@ -901,27 +1085,25 @@ export async function revokeHandoffLink(projectId: string): Promise<void> {
  * never include passwords. This is a client-presentable summary, not an
  * export of the internal project record.
  */
-export async function getProjectByHandoffToken(token: string) {
-  const [project] = await db.select().from(projects).where(eq(projects.handoffToken, token));
-  if (!project) return null;
-
-  // Every real load of the public page is a genuine client visit — logged
-  // so Command Center can show "last viewed" and Paul knows whether the
-  // client actually opened the link he sent.
-  await db.insert(activityLogs).values({
-    projectId: project.id,
-    action: "handoff_viewed",
-    detail: null,
-    actorName: CLIENT_ACTOR_NAME,
-  });
-
-  const [client, techRows, taskRows, completedRows, accessRows, clientActionRows] = await Promise.all([
-    db.select().from(clients).where(eq(clients.id, project.clientId)).then((r) => r[0]),
+/**
+ * The client-safe slice of a project's data — technologies, launch
+ * checklist, completed work, access items — shared by both the read-only
+ * `/handoff/[token]` page and the interactive `/portal` drill-down, which
+ * resolve *which* project this is via two different token schemes but need
+ * the exact same underlying content.
+ */
+async function getProjectClientSafeDetail(projectId: string) {
+  const [techRows, criticalAndClientActionRows, completedRows, accessRows] = await Promise.all([
     db
       .select({ name: technologies.name })
       .from(projectTechnologies)
       .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
-      .where(eq(projectTechnologies.projectId, project.id)),
+      .where(eq(projectTechnologies.projectId, projectId)),
+    // Critical tasks (the dev/launch checklist) and client-action tasks
+    // (the "what we need from you" callout) both come from the same
+    // `tasks` table — one query covering both sets, split apart below,
+    // instead of two separate queries that only differ by which filter
+    // they apply.
     db
       .select({
         id: tasks.id,
@@ -931,7 +1113,12 @@ export async function getProjectByHandoffToken(token: string) {
         canonicalKey: tasks.canonicalKey,
       })
       .from(tasks)
-      .where(and(eq(tasks.projectId, project.id), eq(tasks.isCritical, true))),
+      .where(
+        and(
+          eq(tasks.projectId, projectId),
+          or(eq(tasks.isCritical, true), inArray(tasks.canonicalKey, Array.from(CLIENT_ACTION_CANONICAL_KEYS)))
+        )
+      ),
     // Full scope of completed work — not just the critical/launch checklist
     // above — so the client can see everything delivered, not only what was
     // launch-blocking. Top-level tasks only; subtask-level detail is internal.
@@ -944,7 +1131,7 @@ export async function getProjectByHandoffToken(token: string) {
       })
       .from(tasks)
       .innerJoin(stages, eq(tasks.stageId, stages.id))
-      .where(and(eq(tasks.projectId, project.id), eq(tasks.status, "DONE"), isNull(tasks.parentTaskId)))
+      .where(and(eq(tasks.projectId, projectId), eq(tasks.status, "DONE"), isNull(tasks.parentTaskId)))
       .orderBy(stages.sortOrder, tasks.sortOrder),
     db
       .select({
@@ -955,23 +1142,240 @@ export async function getProjectByHandoffToken(token: string) {
         status: accessItems.status,
       })
       .from(accessItems)
-      .where(and(eq(accessItems.projectId, project.id), ne(accessItems.status, "NOT_NEEDED"))),
-    db
-      .select({ id: tasks.id, title: tasks.title, status: tasks.status })
-      .from(tasks)
-      .where(
-        and(eq(tasks.projectId, project.id), inArray(tasks.canonicalKey, Array.from(CLIENT_ACTION_CANONICAL_KEYS)))
-      ),
+      .where(and(eq(accessItems.projectId, projectId), ne(accessItems.status, "NOT_NEEDED"))),
   ]);
+
+  const criticalTasks = criticalAndClientActionRows.filter((t) => t.isCritical);
+  const clientActionTasks = criticalAndClientActionRows
+    .filter((t) => CLIENT_ACTION_CANONICAL_KEYS.has(t.canonicalKey ?? ""))
+    .map(({ id, title, status }) => ({ id, title, status }));
+
+  return {
+    technologies: techRows.map((t) => t.name),
+    criticalTasks,
+    completedTasks: completedRows,
+    accessItems: accessRows,
+    clientActionTasks,
+  };
+}
+
+export async function listProjectMessages(projectId: string) {
+  const rows = await db
+    .select({
+      id: projectMessages.id,
+      authorName: projectMessages.authorName,
+      body: projectMessages.body,
+      createdAt: projectMessages.createdAt,
+      attachmentId: attachments.id,
+      attachmentLabel: attachments.label,
+      attachmentFileSize: attachments.fileSize,
+      attachmentStoragePath: attachments.storagePath,
+      attachmentUrl: attachments.url,
+    })
+    .from(projectMessages)
+    .leftJoin(attachments, eq(attachments.messageId, projectMessages.id))
+    .where(eq(projectMessages.projectId, projectId))
+    .orderBy(projectMessages.createdAt);
+
+  return Promise.all(
+    rows.map(async (r) => ({
+      id: r.id,
+      authorName: r.authorName,
+      body: r.body,
+      createdAt: r.createdAt,
+      attachment: r.attachmentId
+        ? {
+            id: r.attachmentId,
+            label: r.attachmentLabel,
+            fileSize: r.attachmentFileSize,
+            url: r.attachmentStoragePath ? await getSignedAttachmentUrl(r.attachmentStoragePath) : r.attachmentUrl,
+          }
+        : null,
+    }))
+  );
+}
+
+/** Posts to a project's Comments thread and logs it to Recent Activity — shared by the internal Messages tab (authorName: "Paul") and the public Client Portal (authorName: "Client"). Returns the inserted row so a caller attaching a file can link it to this message's id. */
+export async function postProjectMessage(projectId: string, authorName: string, body: string) {
+  const [message] = await db.insert(projectMessages).values({ projectId, authorName, body }).returning();
+  await db.insert(activityLogs).values({
+    projectId,
+    action: authorName === CLIENT_ACTOR_NAME ? "client_message_posted" : "message_posted",
+    detail: body,
+    actorName: authorName,
+  });
+  return message;
+}
+
+/** Which project a message belongs to and who wrote it — used to authorize deletion (a client may only delete their own messages). */
+export async function getMessageOwnership(messageId: string) {
+  const [row] = await db
+    .select({ projectId: projectMessages.projectId, authorName: projectMessages.authorName })
+    .from(projectMessages)
+    .where(eq(projectMessages.id, messageId));
+  return row ?? null;
+}
+
+/** Deletes one message. Looks up its attachment's storage path first — deleting the message cascades the attachment's DB row automatically, but the actual Supabase Storage object needs an explicit delete before that row is gone. */
+export async function deleteProjectMessage(messageId: string) {
+  const [attachment] = await db.select({ storagePath: attachments.storagePath }).from(attachments).where(eq(attachments.messageId, messageId));
+  await db.delete(projectMessages).where(eq(projectMessages.id, messageId));
+  if (attachment?.storagePath) await deleteStorageObjects([attachment.storagePath]);
+}
+
+/** Wipes an entire project's Comments thread, both authors' messages — same storage-cleanup-before-cascade-delete reasoning as deleteProjectMessage. */
+export async function deleteAllProjectMessages(projectId: string) {
+  const ids = await db.select({ id: projectMessages.id }).from(projectMessages).where(eq(projectMessages.projectId, projectId));
+  const messageIds = ids.map((r) => r.id);
+  const paths =
+    messageIds.length > 0
+      ? (await db.select({ storagePath: attachments.storagePath }).from(attachments).where(inArray(attachments.messageId, messageIds)))
+          .map((a) => a.storagePath)
+          .filter((p): p is string => !!p)
+      : [];
+  await db.delete(projectMessages).where(eq(projectMessages.projectId, projectId));
+  if (paths.length > 0) await deleteStorageObjects(paths);
+}
+
+export async function getProjectByHandoffToken(token: string) {
+  // Project + client in one join, instead of two separate round-trips —
+  // this page previously fired 8 sequential/parallel queries per load
+  // (the one real cause of a hit connection-pool-exhaustion error earlier
+  // in this project's history) and is now down to 6.
+  const [row] = await db
+    .select({ project: projects, clientName: clients.name })
+    .from(projects)
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .where(eq(projects.handoffToken, token));
+  if (!row) return null;
+  const { project, clientName } = row;
+
+  // Every real load of the public page is a genuine client visit — logged
+  // so Command Center can show "last viewed" and Paul knows whether the
+  // client actually opened the link he sent.
+  await db.insert(activityLogs).values({
+    projectId: project.id,
+    action: "handoff_viewed",
+    detail: null,
+    actorName: CLIENT_ACTOR_NAME,
+  });
+
+  const detail = await getProjectClientSafeDetail(project.id);
+  return { project, clientName: clientName ?? "", ...detail };
+}
+
+/**
+ * Files a client is allowed to see for a project: what they uploaded
+ * themselves, or anything shared via the Comments thread from either side
+ * (chat is inherently a shared space — a file Paul sends there should be
+ * visible to the client too). Deliberately still excludes Paul's *general*
+ * Files-tab uploads outside of chat — that list stays internal-only.
+ * Callers are responsible for their own ownership check (this doesn't take
+ * a token) — see getClientProjectPortalDetail and the polling route that
+ * both call it.
+ */
+export async function getClientVisibleFiles(projectId: string) {
+  const rows = await db
+    .select({
+      id: attachments.id,
+      label: attachments.label,
+      fileSize: attachments.fileSize,
+      storagePath: attachments.storagePath,
+      url: attachments.url,
+      createdAt: attachments.createdAt,
+    })
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.projectId, projectId),
+        or(eq(attachments.uploadedByClient, true), isNotNull(attachments.messageId))
+      )
+    )
+    .orderBy(desc(attachments.createdAt));
+
+  return Promise.all(
+    rows.map(async (f) => ({
+      ...f,
+      url: f.storagePath ? await getSignedAttachmentUrl(f.storagePath) : f.url,
+    }))
+  );
+}
+
+/**
+ * Client Portal drill-down — resolves the client from their *client-level*
+ * portalToken (not a project-level token), then verifies the requested
+ * project actually belongs to that client before returning anything. This
+ * ownership check is the one thing standing between a client and being
+ * able to view another client's project by guessing a projectId in the
+ * URL — never skip it.
+ */
+export async function getClientProjectPortalDetail(portalToken: string, projectId: string) {
+  const [row] = await db
+    .select({ project: projects, clientId: clients.id, clientName: clients.name })
+    .from(clients)
+    .innerJoin(projects, eq(projects.clientId, clients.id))
+    .where(and(eq(clients.portalToken, portalToken), eq(projects.id, projectId)));
+  if (!row) return null;
+  const { project, clientName } = row;
+
+  const [detail, stageRows, clientFiles, messages] = await Promise.all([
+    getProjectClientSafeDetail(project.id),
+    db
+      .select({
+        stageKey: stages.key,
+        stageSortOrder: stages.sortOrder,
+        taskStatus: tasks.status,
+      })
+      .from(projectStages)
+      .innerJoin(stages, eq(projectStages.stageId, stages.id))
+      .leftJoin(tasks, and(eq(tasks.stageId, stages.id), eq(tasks.projectId, project.id), isNull(tasks.parentTaskId)))
+      .where(eq(projectStages.projectId, project.id)),
+    getClientVisibleFiles(project.id),
+    listProjectMessages(project.id),
+  ]);
+
+  // One row per stage/task combination above — collapse into per-(real)-
+  // stage done/total first, then further collapse the up-to-18 internal
+  // stages into the 5 client-facing phases from CLIENT_PORTAL_PHASES (the
+  // internal app's own granularity — Access & Credentials, Integrations,
+  // Security, Handoff, etc. — is more detail than a client needs). A phase
+  // only shows if the project actually has at least one task in it.
+  const stageMap = new Map<string, { done: number; total: number }>();
+  for (const r of stageRows) {
+    const entry = stageMap.get(r.stageKey) ?? { done: 0, total: 0 };
+    if (r.taskStatus !== null) {
+      entry.total += 1;
+      if (r.taskStatus === "DONE" || r.taskStatus === "SKIPPED") entry.done += 1;
+    }
+    stageMap.set(r.stageKey, entry);
+  }
+  const orderedStages = CLIENT_PORTAL_PHASES.map((phase) => {
+    let done = 0;
+    let total = 0;
+    for (const key of phase.stageKeys) {
+      const s = stageMap.get(key);
+      if (s) {
+        done += s.done;
+        total += s.total;
+      }
+    }
+    return { name: phase.name, done, total };
+  }).filter((p) => p.total > 0);
+  const currentStageIndex = orderedStages.findIndex((s) => s.done < s.total);
 
   return {
     project,
-    clientName: client?.name ?? "",
-    technologies: techRows.map((t) => t.name),
-    criticalTasks: taskRows,
-    completedTasks: completedRows,
-    accessItems: accessRows,
-    clientActionTasks: clientActionRows,
+    clientName: clientName ?? "",
+    ...detail,
+    stages: orderedStages.map((s, i) => ({
+      name: s.name,
+      done: s.done,
+      total: s.total,
+      isCurrent: i === currentStageIndex,
+      isDone: currentStageIndex === -1 ? true : i < currentStageIndex,
+    })),
+    clientFiles,
+    messages,
   };
 }
 
@@ -1059,13 +1463,15 @@ export async function setTaskWaitingOnClient(taskId: string, waiting: boolean): 
  * same pattern as getProjectDetail's task attachments).
  */
 export async function listProjectAttachments(projectId: string) {
-  return db
+  const rows = await db
     .select({
       id: attachments.id,
       url: attachments.url,
       storagePath: attachments.storagePath,
       label: attachments.label,
       fileSize: attachments.fileSize,
+      uploadedByClient: attachments.uploadedByClient,
+      messageId: attachments.messageId,
       createdAt: attachments.createdAt,
       taskTitle: tasks.title,
     })
@@ -1073,6 +1479,18 @@ export async function listProjectAttachments(projectId: string) {
     .leftJoin(tasks, eq(attachments.taskId, tasks.id))
     .where(or(eq(attachments.projectId, projectId), eq(tasks.projectId, projectId)))
     .orderBy(desc(attachments.createdAt));
+  return rows.map(({ messageId, ...r }) => ({ ...r, viaChat: !!messageId }));
+}
+
+/** Same as listProjectAttachments, with signed URLs already resolved for storagePath rows — shared by the Files tab's initial server render and its polling route, so both stay in sync with a single implementation. */
+export async function listProjectAttachmentsWithUrls(projectId: string) {
+  const files = await listProjectAttachments(projectId);
+  return Promise.all(
+    files.map(async (f) => ({
+      ...f,
+      url: f.storagePath ? await getSignedAttachmentUrl(f.storagePath) : f.url,
+    }))
+  );
 }
 
 export async function updateProjectNotes(projectId: string, notes: string | null) {

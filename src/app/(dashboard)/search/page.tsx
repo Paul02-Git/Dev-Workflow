@@ -46,7 +46,7 @@ export default async function SearchPage({
               <div className="font-medium">{r.title}</div>
               <div className="text-xs text-muted-foreground">{r.subtitle}</div>
             </div>
-            <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-semibold text-[#52514e]">
+            <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-[#52514e]">
               {TYPE_LABELS[r.type] ?? r.type}
             </span>
           </Link>

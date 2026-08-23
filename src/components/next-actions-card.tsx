@@ -21,13 +21,21 @@ const PRIORITY_BG: Record<string, string> = {
   LOW: "#f1f0ee",
 };
 
-export function NextActionsCard({ projectId, tasks }: { projectId: string; tasks: ActionTask[] }) {
+export function NextActionsCard({
+  projectId,
+  tasks,
+  viewAllTabSlug = "tasks",
+}: {
+  projectId: string;
+  tasks: ActionTask[];
+  viewAllTabSlug?: "tasks" | "qa" | "launch";
+}) {
   return (
     <div className="app-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Next actions</h2>
         <Link
-          href={`/projects/${projectId}?tab=tasks`}
+          href={`/projects/${projectId}?tab=${viewAllTabSlug}&filter=actionable`}
           className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
         >
           View tasks
@@ -43,10 +51,10 @@ export function NextActionsCard({ projectId, tasks }: { projectId: string; tasks
               <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                 <div className="min-w-0">
                   <div className="font-medium">{t.title}</div>
-                  <div className="text-[11px] text-muted-foreground">{t.stageName}</div>
+                  <div className="text-xs text-muted-foreground">{t.stageName}</div>
                 </div>
                 <span
-                  className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                  className="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-bold"
                   style={{ backgroundColor: PRIORITY_BG[label] ?? "#f1f0ee", color: PRIORITY_COLOR[label] ?? "#898781" }}
                 >
                   {label}

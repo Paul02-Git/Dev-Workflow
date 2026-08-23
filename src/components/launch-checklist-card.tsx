@@ -9,8 +9,8 @@ const PREVIEW_LIMIT = 12;
  * content area is the standard "equal-height dashboard card" pattern —
  * the card grows to fill whatever space its wrapper gives it, and the
  * capped list area absorbs that extra space instead of the card matching
- * a sibling's exact content. The full checklist lives on the Tasks tab;
- * "View all" lands there.
+ * a sibling's exact content. The full checklist lives on its own Launch
+ * tab; "View all" lands there.
  */
 export function LaunchChecklistCard({ projectId, tasks }: { projectId: string; tasks: ChecklistTask[] }) {
   if (tasks.length === 0) return null;
@@ -35,7 +35,7 @@ export function LaunchChecklistCard({ projectId, tasks }: { projectId: string; t
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">Ready for launch</span>
         <Link
-          href={`/projects/${projectId}?tab=tasks#launch-checklist`}
+          href={`/projects/${projectId}?tab=launch`}
           className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
         >
           View all

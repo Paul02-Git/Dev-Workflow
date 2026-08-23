@@ -32,8 +32,8 @@ export default function SettingsPage() {
           <li>Authentication / multi-user access control</li>
           <li>Email or notification preferences</li>
           <li>Editing templates, stages, or technologies from the UI (edit the files in{" "}
-            <code className="rounded bg-black/5 px-1 py-0.5 text-[11px]">src/data/</code> and{" "}
-            <code className="rounded bg-black/5 px-1 py-0.5 text-[11px]">src/data/templates/</code> instead)
+            <code className="rounded bg-black/5 px-1 py-0.5 text-xs">src/data/</code> and{" "}
+            <code className="rounded bg-black/5 px-1 py-0.5 text-xs">src/data/templates/</code> instead)
           </li>
         </ul>
       </div>

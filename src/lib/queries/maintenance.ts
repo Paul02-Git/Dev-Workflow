@@ -10,7 +10,7 @@ import {
   taskTags,
   activityLogs,
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull, ne } from "drizzle-orm";
 import { AGENCY_OWNER_NAME } from "@/data/agency-info";
 
 // Generated maintenance tasks land in this existing stage (already part of
@@ -38,7 +38,9 @@ export async function listMaintenancePlans() {
       nextDueAt: maintenancePlans.nextDueAt,
       lastGeneratedAt: maintenancePlans.lastGeneratedAt,
       isActive: maintenancePlans.isActive,
+      isPaid: maintenancePlans.isPaid,
       projectName: projects.name,
+      clientId: clients.id,
       clientName: clients.name,
     })
     .from(maintenancePlans)
@@ -66,6 +68,7 @@ export async function listMaintenancePlansForProject(projectId: string) {
       nextDueAt: maintenancePlans.nextDueAt,
       lastGeneratedAt: maintenancePlans.lastGeneratedAt,
       isActive: maintenancePlans.isActive,
+      isPaid: maintenancePlans.isPaid,
       projectName: projects.name,
       clientName: clients.name,
     })
@@ -97,7 +100,7 @@ export async function createMaintenancePlan(input: {
 
 export async function updateMaintenancePlan(
   planId: string,
-  input: { isActive?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
+  input: { isActive?: boolean; isPaid?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
 ) {
   await db
     .update(maintenancePlans)
@@ -105,15 +108,34 @@ export async function updateMaintenancePlan(
     .where(eq(maintenancePlans.id, planId));
 }
 
+/**
+ * Deleting a plan also deletes its not-yet-completed generated tasks —
+ * they're just pending checklist items for a plan that no longer exists,
+ * not real work. A task already marked DONE or SKIPPED stays (tasks.
+ * maintenancePlanId is ON DELETE SET NULL, so it just becomes an
+ * unlinked, ordinary task) as a historical record that the work actually
+ * happened, rather than being silently erased along with the plan.
+ */
 export async function deleteMaintenancePlan(planId: string) {
+  await db
+    .delete(tasks)
+    .where(and(eq(tasks.maintenancePlanId, planId), ne(tasks.status, "DONE"), ne(tasks.status, "SKIPPED")));
   await db.delete(maintenancePlans).where(eq(maintenancePlans.id, planId));
 }
 
 /**
- * Materializes this cycle's checklist as real tasks on the project, tagged
- * with a dated tag so past cycles stay distinguishable in the task list.
- * nextDueAt is anchored to "now" (not the previous due date) so a plan that
- * sat overdue for a while doesn't come back due again immediately.
+ * Advances this plan to its next cycle. Each checklist item is one
+ * persistent task (linked via tasks.maintenancePlanId), not a fresh row
+ * every time — "Generate" used to insert a brand new duplicate set of
+ * tasks on every call, so a project that had been generated a few times
+ * ended up with the same checklist repeated over and over in the task
+ * list. Now it reconciles against whatever's already linked to this plan:
+ * an existing task for a checklist item gets reset to TODO with its due
+ * date pushed to the new cycle; only a genuinely new checklist item (one
+ * that's never been generated before, e.g. the checklist was edited to add
+ * a line) gets a new task row. nextDueAt is anchored to "now" (not the
+ * previous due date) so a plan that sat overdue for a while doesn't come
+ * back due again immediately.
  */
 export async function generateMaintenanceRun(planId: string): Promise<string | null> {
   const [plan] = await db.select().from(maintenancePlans).where(eq(maintenancePlans.id, planId));
@@ -139,44 +161,72 @@ export async function generateMaintenanceRun(planId: string): Promise<string | n
     });
   }
 
-  const now = new Date();
-  const cycleTagName = `maintenance:${now.toISOString().slice(0, 7)}`; // e.g. maintenance:2026-08
-  const [cycleTag] = await db
-    .insert(tags)
-    .values({ name: cycleTagName })
-    .onConflictDoUpdate({ target: tags.name, set: { name: cycleTagName } })
-    .returning();
-
   const items = plan.checklistTemplate
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
   if (items.length === 0) return plan.projectId;
 
-  const [{ maxSort: maxTaskSort }] = await db
-    .select({ maxSort: sql<number>`coalesce(max(${tasks.sortOrder}), -1)` })
+  const now = new Date();
+  const nextDue = new Date(now.getTime() + plan.cadenceDays * 24 * 60 * 60 * 1000);
+
+  const linkedTasks = await db
+    .select({ id: tasks.id, title: tasks.title })
     .from(tasks)
-    .where(eq(tasks.projectId, plan.projectId));
+    .where(and(eq(tasks.maintenancePlanId, planId), isNull(tasks.parentTaskId)));
+  const linkedByTitle = new Map(linkedTasks.map((t) => [t.title, t.id]));
 
-  const insertedTasks = await db
-    .insert(tasks)
-    .values(
-      items.map((title, i) => ({
-        projectId: plan.projectId,
-        stageId: stage.id,
-        title,
-        priority: "MEDIUM" as const,
-        sortOrder: maxTaskSort + 1 + i,
-      }))
-    )
-    .returning({ id: tasks.id });
+  const resetIds: string[] = [];
+  const newTitles: string[] = [];
+  for (const title of items) {
+    const existingId = linkedByTitle.get(title);
+    if (existingId) resetIds.push(existingId);
+    else newTitles.push(title);
+  }
 
-  await db.insert(taskTags).values(insertedTasks.map((t) => ({ taskId: t.id, tagId: cycleTag.id })));
+  if (resetIds.length > 0) {
+    await db
+      .update(tasks)
+      .set({ status: "TODO", completedAt: null, dueDate: nextDue, updatedAt: now })
+      .where(inArray(tasks.id, resetIds));
+  }
+
+  if (newTitles.length > 0) {
+    const [{ maxSort: maxTaskSort }] = await db
+      .select({ maxSort: sql<number>`coalesce(max(${tasks.sortOrder}), -1)` })
+      .from(tasks)
+      .where(eq(tasks.projectId, plan.projectId));
+
+    const insertedTasks = await db
+      .insert(tasks)
+      .values(
+        newTitles.map((title, i) => ({
+          projectId: plan.projectId,
+          stageId: stage.id,
+          maintenancePlanId: planId,
+          title,
+          priority: "MEDIUM" as const,
+          dueDate: nextDue,
+          sortOrder: maxTaskSort + 1 + i,
+        }))
+      )
+      .returning({ id: tasks.id });
+
+    // A plain "maintenance" tag, not one scoped to this cycle's month —
+    // there's only ever one persistent task per checklist item now, so a
+    // dated tag would just go stale the moment it rolled into a later cycle.
+    const [maintenanceTag] = await db
+      .insert(tags)
+      .values({ name: "maintenance" })
+      .onConflictDoUpdate({ target: tags.name, set: { name: "maintenance" } })
+      .returning();
+    await db.insert(taskTags).values(insertedTasks.map((t) => ({ taskId: t.id, tagId: maintenanceTag.id })));
+  }
 
   await db.insert(activityLogs).values({
     projectId: plan.projectId,
     action: "maintenance_run_generated",
-    detail: `${plan.name}: ${items.length} task(s) — ${cycleTagName}`,
+    detail: `${plan.name}: ${resetIds.length} task(s) reset, ${newTitles.length} new — due ${nextDue.toLocaleDateString()}`,
     actorName: AGENCY_OWNER_NAME,
   });
 
@@ -184,7 +234,10 @@ export async function generateMaintenanceRun(planId: string): Promise<string | n
     .update(maintenancePlans)
     .set({
       lastGeneratedAt: now,
-      nextDueAt: new Date(now.getTime() + plan.cadenceDays * 24 * 60 * 60 * 1000),
+      nextDueAt: nextDue,
+      // A new cycle means a new invoice — whatever was paid was for the
+      // cycle that just ended, not this one.
+      isPaid: false,
       updatedAt: now,
     })
     .where(eq(maintenancePlans.id, planId));

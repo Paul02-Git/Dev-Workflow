@@ -10,9 +10,11 @@ import {
   deriveBlockedProjects,
   deriveReadyToLaunch,
   deriveLaunchReadinessRanking,
+  deriveOverdueLaunches,
 } from "@/lib/queries/projects";
 import { listAccessItems } from "@/lib/queries/access-items";
 import { listDueMaintenancePlans } from "@/lib/queries/maintenance";
+import { withTimeout } from "@/lib/with-timeout";
 import { GenerateMaintenanceButton } from "@/components/generate-maintenance-button";
 import { SearchTrigger } from "@/components/search-trigger";
 import { DashboardStatRow } from "@/components/dashboard-stat-row";
@@ -40,13 +42,26 @@ export default async function DashboardPage({
 }) {
   const { panel } = await searchParams;
 
-  const [projects, allTasks, activity, duePlans, switcherProjects] = await Promise.all([
-    listProjects(),
-    listAllTasks(),
-    listRecentActivityAcrossProjects(16),
-    listDueMaintenancePlans(),
-    listProjectsForSwitcher(),
-  ]);
+  // Timeout-protected and fault-tolerant on its own, separate from the
+  // main Promise.all below — a failure here (tech badges, panel picker)
+  // shouldn't take down the rest of the dashboard's real data.
+  let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
+  try {
+    switcherProjects = await withTimeout(listProjectsForSwitcher(), 5000, "project switcher");
+  } catch {
+    // swallow — empty switcher is an acceptable degraded state
+  }
+
+  const [projects, allTasks, activity, duePlans] = await withTimeout(
+    Promise.all([
+      listProjects(),
+      listAllTasks(),
+      listRecentActivityAcrossProjects(16),
+      listDueMaintenancePlans(),
+    ]),
+    8000,
+    "dashboard top queries"
+  );
 
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
   const topLevelTasks = allTasks.filter((t) => !t.parentTaskId);
@@ -56,6 +71,7 @@ export default async function DashboardPage({
   const blockedProjects = deriveBlockedProjects(allTasks);
   const readyToLaunch = deriveReadyToLaunch(allTasks);
   const launchRanking = deriveLaunchReadinessRanking(allTasks);
+  const overdueLaunches = deriveOverdueLaunches(allTasks, projects);
 
   const technologiesByProject = new Map(switcherProjects.map((p) => [p.id, p.technologyNames]));
 
@@ -82,7 +98,11 @@ export default async function DashboardPage({
   const featuredProjectId = panel ?? launchRanking[0]?.projectId ?? projects[0]?.id ?? null;
 
   const [featuredDetail, featuredAccessItems] = featuredProjectId
-    ? await Promise.all([getProjectDetail(featuredProjectId), listAccessItems(featuredProjectId)])
+    ? await withTimeout(
+        Promise.all([getProjectDetail(featuredProjectId), listAccessItems(featuredProjectId)]),
+        8000,
+        "dashboard featured panel"
+      )
     : [null, []];
 
   let panelProject: { id: string; name: string; status: string } | null = null;
@@ -136,6 +156,32 @@ export default async function DashboardPage({
           waitingOnClientCount={waitingOnClient.length}
           readyToLaunchCount={readyToLaunch.length}
         />
+
+        {overdueLaunches.length > 0 && (
+          <div className="mb-4 rounded-lg border border-[#f3d4d4] bg-[#fdf5f5] p-4">
+            <h2 className="mb-2 text-sm font-semibold text-[#d03b3b]">Launch overdue</h2>
+            <ul className="divide-y divide-border">
+              {overdueLaunches.map((p) => (
+                <li key={p.projectId} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-medium">{p.projectName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {p.clientName} · was due {new Date(p.targetLaunchDate).toLocaleDateString()} ·{" "}
+                      {p.daysOverdue === 0 ? "today" : `${p.daysOverdue}d overdue`} · {p.criticalDone}/
+                      {p.criticalTotal} critical tasks done
+                    </div>
+                  </div>
+                  <Link
+                    href={`/projects/${p.projectId}?tab=tasks#launch-checklist`}
+                    className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-muted"
+                  >
+                    View checklist
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {duePlans.length > 0 && (
           <div className="mb-4 rounded-lg border border-border bg-[#fef4de] p-4">

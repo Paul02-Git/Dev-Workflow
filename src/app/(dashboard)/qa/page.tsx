@@ -47,7 +47,7 @@ export default async function QaPage() {
                   <div className="flex items-center gap-2">
                     {t.title}
                     {t.isCritical && (
-                      <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-[10px] font-bold text-[#d03b3b]">
+                      <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-xs font-bold text-[#d03b3b]">
                         CRITICAL
                       </span>
                     )}

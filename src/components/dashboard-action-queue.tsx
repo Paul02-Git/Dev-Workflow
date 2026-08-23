@@ -67,11 +67,11 @@ export function DashboardActionQueue({ items, previewLimit = 6 }: { items: Actio
                   />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{item.title}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{item.projectName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{item.projectName}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span
-                      className="rounded-full px-2.5 py-1 text-[11px] font-bold"
+                      className="rounded-full px-2.5 py-1 text-xs font-bold"
                       style={{ backgroundColor: PRIORITY_BG[label] ?? "#f1f0ee", color: PRIORITY_COLOR[label] ?? "#898781" }}
                     >
                       {PRIORITY_LABEL[label] ?? label}

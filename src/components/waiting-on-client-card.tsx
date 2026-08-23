@@ -5,7 +5,7 @@ type WaitingTask = {
   id: string;
   title: string;
   waitingOnClientSince: Date | string | null;
-  tabSlug: "tasks" | "qa";
+  tabSlug: "tasks" | "qa" | "launch";
 };
 
 const PREVIEW_LIMIT = 3;
@@ -20,10 +20,14 @@ export function WaitingOnClientCard({ projectId, tasks }: { projectId: string; t
   const preview = tasks.slice(0, PREVIEW_LIMIT);
   const remaining = tasks.length - preview.length;
   // "View all" defaults to the Tasks tab, but only if that tab actually
-  // has at least one matching item — otherwise (all waiting tasks are
-  // QA-stage) it would land on a filtered view that's structurally empty,
-  // since QA tasks never render under the Tasks tab.
-  const viewAllTabSlug = tasks.some((t) => t.tabSlug === "tasks") ? "tasks" : "qa";
+  // has at least one matching item — otherwise it falls back to QA, then
+  // Launch, whichever actually has a match — so it never lands on a
+  // filtered view that's structurally empty.
+  const viewAllTabSlug = tasks.some((t) => t.tabSlug === "tasks")
+    ? "tasks"
+    : tasks.some((t) => t.tabSlug === "qa")
+      ? "qa"
+      : "launch";
 
   return (
     <div className="app-card p-4">

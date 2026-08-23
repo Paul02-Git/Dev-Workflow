@@ -45,11 +45,13 @@ export function SettingsTab({
           Recurring retainer checklists for this project. No cron runs these — generate each cycle by hand
           when it&apos;s due (also surfaced on the dashboard when overdue).
         </p>
-        <CreateMaintenancePlanForm
-          projects={[{ id: projectId, name: projectName, clientName }]}
-          defaultChecklist={DEFAULT_MAINTENANCE_CHECKLIST}
-          lockedProjectId={projectId}
-        />
+        <div className="mb-3">
+          <CreateMaintenancePlanForm
+            projects={[{ id: projectId, name: projectName, clientName }]}
+            defaultChecklist={DEFAULT_MAINTENANCE_CHECKLIST}
+            lockedProjectId={projectId}
+          />
+        </div>
         {maintenancePlans.length === 0 ? (
           <p className="text-sm text-muted-foreground">No maintenance plans for this project yet.</p>
         ) : (

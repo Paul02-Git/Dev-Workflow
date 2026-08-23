@@ -80,7 +80,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
           + Add platform
         </button>
       </div>
-      <p className="mb-3 shrink-0 text-[11px] text-muted-foreground">
+      <p className="mb-3 shrink-0 text-xs text-muted-foreground">
         Track whether you&apos;ve been invited in yet. Use the ⋮ menu on a row to store a login (encrypted).
       </p>
 
@@ -120,7 +120,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
                       <PlatformIcon name={preset.name} size={20} />
                     ) : (
                       <span
-                        className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white"
                         style={{ backgroundColor: monogramColor(preset.name) }}
                       >
                         {preset.name.trim().charAt(0).toUpperCase()}
@@ -188,7 +188,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
                   <button
                     type="button"
                     onClick={() => setShowAddLogin(true)}
-                    className="block text-[11px] text-muted-foreground hover:underline"
+                    className="block text-xs text-muted-foreground hover:underline"
                   >
                     Shared login instead?
                   </button>
@@ -257,7 +257,7 @@ function AccessItemRow({ projectId, item }: { projectId: string; item: AccessIte
           <PlatformIcon name={item.name} size={28} />
         ) : (
           <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
             style={{ backgroundColor: monogramColor(item.name) }}
             aria-hidden="true"
           >
@@ -278,7 +278,7 @@ function AccessItemRow({ projectId, item }: { projectId: string; item: AccessIte
               checklist card's list budget. Extra right padding keeps the
               chevron off the pill's edge. */}
           <SelectTrigger
-            className="h-7 w-36 shrink-0 justify-between rounded-lg border-0 pr-3 pl-2.5 text-[11px] font-semibold"
+            className="h-7 w-36 shrink-0 justify-between rounded-lg border-0 pr-3 pl-2.5 text-xs font-semibold"
             style={{ backgroundColor: STATUS_BG[item.status], color: STATUS_COLORS[item.status] }}
           >
             <SelectValue />

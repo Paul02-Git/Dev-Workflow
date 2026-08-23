@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db/client";
-import { attachments, tasks } from "@/db/schema";
+import { activityLogs, attachments, tasks } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
 
 // Service-role client, server-only — bypasses RLS by design so uploads work
 // from Server Actions without a signed-in Supabase Auth session (this app
@@ -59,10 +60,56 @@ export async function uploadTaskAttachment(taskId: string, file: File): Promise<
   return getTaskProjectId(taskId);
 }
 
-/** Uploads a general project file (not tied to any specific task) and records it. */
-export async function uploadProjectAttachment(projectId: string, file: File): Promise<void> {
+/**
+ * Uploads a general project file (not tied to any specific task) and
+ * records it. `fromClient` marks it as submitted via the public Client
+ * Portal rather than by Paul internally — flags the row for the Files
+ * tab's badge and logs a Recent Activity entry (an internal upload does
+ * neither, so this only happens for client uploads).
+ */
+export async function uploadProjectAttachment(
+  projectId: string,
+  file: File,
+  opts?: { fromClient?: boolean }
+): Promise<void> {
   const path = await validateAndUpload(file, `project-${projectId}`);
-  await db.insert(attachments).values({ projectId, storagePath: path, label: file.name, fileSize: file.size });
+  await db
+    .insert(attachments)
+    .values({ projectId, storagePath: path, label: file.name, fileSize: file.size, uploadedByClient: !!opts?.fromClient });
+  if (opts?.fromClient) {
+    await db.insert(activityLogs).values({
+      projectId,
+      action: "client_file_uploaded",
+      detail: file.name,
+      actorName: CLIENT_ACTOR_NAME,
+    });
+  }
+}
+
+/**
+ * Uploads a file sent through the Comments thread and links it to that
+ * specific message (for the inline chat card) — also sets `projectId`, the
+ * same field a general Files-tab upload uses, so it shows up in the Files
+ * tab automatically with no separate query needed. No activity-log entry
+ * here: the message itself already logs `message_posted`/
+ * `client_message_posted`, and double-logging one user action would just
+ * clutter Recent Activity.
+ */
+export async function uploadMessageAttachment(
+  projectId: string,
+  messageId: string,
+  file: File,
+  opts?: { fromClient?: boolean }
+): Promise<void> {
+  const path = await validateAndUpload(file, `project-${projectId}`);
+  await db.insert(attachments).values({
+    projectId,
+    messageId,
+    storagePath: path,
+    label: file.name,
+    fileSize: file.size,
+    uploadedByClient: !!opts?.fromClient,
+  });
 }
 
 /**

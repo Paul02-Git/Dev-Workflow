@@ -22,7 +22,7 @@ function progressColor(percent: number): string {
 
 export function DashboardActiveProjects({
   projects,
-  previewLimit = 6,
+  previewLimit = 20,
   featuredProjectId = null,
 }: {
   projects: ActiveProjectRow[];
@@ -56,7 +56,7 @@ export function DashboardActiveProjects({
           .
         </p>
       ) : (
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+        <div className="max-h-[400px] space-y-2 overflow-y-auto">
           {shown.map((p) => {
             const percent = p.tasksTotal > 0 ? Math.round((p.tasksDone / p.tasksTotal) * 100) : 0;
             const color = progressColor(percent);

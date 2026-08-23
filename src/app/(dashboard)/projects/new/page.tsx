@@ -63,7 +63,7 @@ export default async function NewProjectPage({
                 <input type="checkbox" name="technologies" value={tech.key} className="accent-primary" />
                 <span>
                   {tech.name}
-                  <span className="ml-1 text-[11px] text-muted-foreground">({tech.category})</span>
+                  <span className="ml-1 text-xs text-muted-foreground">({tech.category})</span>
                 </span>
               </label>
             ))}

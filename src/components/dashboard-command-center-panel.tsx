@@ -90,7 +90,7 @@ export function DashboardCommandCenterPanel({
   if (!project) {
     return (
       <div className="app-card p-4">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Project Command Center</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Project Command Center</span>
         <p className="mt-2 text-sm text-muted-foreground">
           No projects yet.{" "}
           <Link href="/projects/new" className="text-primary hover:underline">
@@ -108,7 +108,7 @@ export function DashboardCommandCenterPanel({
     <div className="space-y-4">
       <div className="app-card p-5">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Project Command Center</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Project Command Center</span>
           <DashboardPanelProjectPicker projects={switcherProjects} selectedId={project.id} isAuto={isAuto} />
         </div>
         <div className="mb-5 flex items-center justify-between gap-2">
@@ -120,14 +120,14 @@ export function DashboardCommandCenterPanel({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Progress</div>
+            <div className="mb-1.5 text-xs font-semibold text-muted-foreground">Progress</div>
             <div className="mb-1.5 text-lg font-bold">{progressPercent}%</div>
             <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
               <div className="h-full rounded-full bg-[#2a78d6]" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
           <div>
-            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">Launch Readiness</div>
+            <div className="mb-1.5 text-xs font-semibold text-muted-foreground">Launch Readiness</div>
             <div className="mb-1.5 text-lg font-bold">{launchReadinessPercent === null ? "—" : `${launchReadinessPercent}%`}</div>
             <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
               <div className="h-full rounded-full bg-[#0ca30c]" style={{ width: `${launchReadinessPercent ?? 0}%` }} />
@@ -143,10 +143,10 @@ export function DashboardCommandCenterPanel({
               <ArrowRightIcon className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">Next Action</div>
+              <div className="mb-0.5 text-xs font-semibold uppercase text-muted-foreground">Next Action</div>
               <div className="truncate text-sm font-semibold">{nextAction.title}</div>
               <div
-                className="mt-0.5 text-[11px] font-medium"
+                className="mt-0.5 text-xs font-medium"
                 style={{ color: PRIORITY_LABEL_COLOR[nextAction.isCritical ? "CRITICAL" : nextAction.priority] }}
               >
                 {nextAction.isCritical ? "Critical Priority" : `${nextAction.priority} Priority`} · ~

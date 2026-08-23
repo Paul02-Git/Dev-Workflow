@@ -12,7 +12,7 @@ export function DashboardPanelNotes({ projectId, notes }: { projectId: string; n
     <div>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Notes</h3>
-        {saved && <span className="text-[11px] font-semibold text-[#0ca30c]">Saved</span>}
+        {saved && <span className="text-xs font-semibold text-[#0ca30c]">Saved</span>}
       </div>
       <textarea
         value={value}

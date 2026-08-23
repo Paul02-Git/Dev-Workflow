@@ -132,7 +132,7 @@ export function ProjectPulseCards({ summary }: { summary: ProjectPulseSummary })
             </div>
             <ul className="space-y-0.5">
               {summary.issues.slice(0, 3).map((issue) => (
-                <li key={issue.id} className="truncate text-[11px] text-[#52514e]">
+                <li key={issue.id} className="truncate text-xs text-[#52514e]">
                   • {issue.message}
                 </li>
               ))}

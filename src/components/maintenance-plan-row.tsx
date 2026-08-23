@@ -37,12 +37,12 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold">{plan.name}</span>
             {!plan.isActive && (
-              <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+              <span className="rounded-full bg-black/5 px-1.5 py-0.5 text-xs font-bold text-muted-foreground">
                 PAUSED
               </span>
             )}
             {isDue && (
-              <span className="rounded-full bg-[#fef4de] px-1.5 py-0.5 text-[10px] font-bold text-[#8a5c00]">
+              <span className="rounded-full bg-[#fef4de] px-1.5 py-0.5 text-xs font-bold text-[#8a5c00]">
                 DUE
               </span>
             )}
@@ -50,7 +50,7 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
           <div className="text-xs text-muted-foreground">
             {plan.projectName} · {plan.clientName} · every {plan.cadenceDays}d
           </div>
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             Next due {due.toLocaleDateString()}
             {plan.lastGeneratedAt && ` · last generated ${new Date(plan.lastGeneratedAt).toLocaleDateString()}`}
           </div>
@@ -103,7 +103,7 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
       {editing && (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           <label className="block">
-            <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">Cadence (days)</span>
+            <span className="mb-1 block text-xs font-semibold text-muted-foreground">Cadence (days)</span>
             <input
               type="number"
               min={1}
@@ -113,7 +113,7 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">
+            <span className="mb-1 block text-xs font-semibold text-muted-foreground">
               Checklist (one item per line)
             </span>
             <textarea

@@ -12,7 +12,7 @@ export function NotesTab({ projectId, notes }: { projectId: string; notes: strin
     <div className="app-card p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold">Notes</h2>
-        {saved && <span className="text-[11px] font-medium text-[#0ca30c]">Saved</span>}
+        {saved && <span className="text-xs font-medium text-[#0ca30c]">Saved</span>}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
         A scratchpad for anything worth remembering about this project — client preferences, quirks, things

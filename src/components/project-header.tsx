@@ -22,7 +22,16 @@ import {
 import { ProjectStatusSelect } from "@/components/project-status-select";
 import { AddTaskForm } from "@/components/add-task-form";
 import { generateHandoffLinkAction } from "@/lib/actions";
-import { MoreVerticalIcon, UsersIcon, LinkIcon, SettingsIcon, CheckCircle2Icon } from "lucide-react";
+import {
+  MoreVerticalIcon,
+  UsersIcon,
+  LinkIcon,
+  SettingsIcon,
+  CheckCircle2Icon,
+  ListFilterIcon,
+  CheckIcon,
+} from "lucide-react";
+import { DropdownMenuShortcut } from "@/components/ui/dropdown-menu";
 import { hashPick } from "@/lib/hash-color";
 import { resolvePlatformIcon } from "@/components/platform-icon";
 
@@ -60,6 +69,9 @@ export function ProjectHeader({
   healthScore,
   stages,
   technologies,
+  activeTaskFilter,
+  taskFilterOptions,
+  allTasksCount,
 }: {
   projectId: string;
   projectName: string;
@@ -73,6 +85,9 @@ export function ProjectHeader({
   healthScore: number;
   stages: readonly { key: string; name: string }[];
   technologies: string[];
+  activeTaskFilter: "waiting" | "blocked" | "critical" | "actionable" | null;
+  taskFilterOptions: { key: "waiting" | "blocked" | "critical" | "actionable"; label: string; count: number; tabSlug: "tasks" | "qa" | "launch" }[];
+  allTasksCount: number;
 }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -158,6 +173,30 @@ export function ProjectHeader({
               <DropdownMenuItem onClick={() => router.push(`/projects/${projectId}?tab=settings`)}>
                 <SettingsIcon /> Project settings
               </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="outline" size="icon" aria-label="Filter tasks" title="Filter tasks" />}
+            >
+              <ListFilterIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => router.push(`/projects/${projectId}?tab=tasks`)}>
+                {!activeTaskFilter && <CheckIcon />}
+                All
+                <DropdownMenuShortcut>{allTasksCount}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              {taskFilterOptions.map((o) => (
+                <DropdownMenuItem
+                  key={o.key}
+                  onClick={() => router.push(`/projects/${projectId}?tab=${o.tabSlug}&filter=${o.key}`)}
+                >
+                  {activeTaskFilter === o.key && <CheckIcon />}
+                  {o.label}
+                  <DropdownMenuShortcut>{o.count}</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
           <AddTaskForm projectId={projectId} stages={stages} />

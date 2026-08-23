@@ -171,7 +171,7 @@ export function CommandPalette() {
             </button>
           ))}
         </div>
-        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
           <span>↑↓ navigate · ↵ open · esc close</span>
           <span>Ctrl/⌘K or / to reopen</span>
         </div>

@@ -56,7 +56,7 @@ export function ProjectSwitcher({ projects }: { projects: SwitcherProject[] }) {
                     <div className={`truncate font-medium ${isCurrent ? "text-[#184f95]" : "text-foreground"}`}>
                       {p.name}
                     </div>
-                    <div className="truncate text-[10px] text-muted-foreground">{p.clientName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{p.clientName}</div>
                   </div>
                   {isCurrent && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
                 </div>

@@ -23,7 +23,7 @@ export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
     <div className="space-y-5">
       {BUCKET_ORDER.filter((b) => byBucket.has(b)).map((bucket) => (
         <div key={bucket}>
-          <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{bucket}</h3>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{bucket}</h3>
           <div className="app-card divide-y divide-border">
             {byBucket.get(bucket)!.map((row) => {
               const { actor, rest } = formatActivitySentence(row);

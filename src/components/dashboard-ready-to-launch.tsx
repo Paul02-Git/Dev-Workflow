@@ -32,7 +32,7 @@ export function DashboardReadyToLaunch({ items }: { items: ReadyToLaunchRow[] })
             {items.map((item) => (
               <li key={item.projectId}>
                 <Link
-                  href={`/projects/${item.projectId}?tab=tasks#launch-checklist`}
+                  href={`/projects/${item.projectId}?tab=launch`}
                   className="flex items-center gap-3 rounded-lg border border-border bg-white p-3 text-sm hover:bg-muted"
                 >
                   {item.primaryTech ? (

@@ -32,7 +32,7 @@ export default async function IntegrationsPage() {
                       <Link
                         key={p.projectId}
                         href={`/projects/${p.projectId}`}
-                        className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-[#52514e] hover:bg-black/10"
+                        className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium text-[#52514e] hover:bg-black/10"
                       >
                         {p.projectName}
                       </Link>

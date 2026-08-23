@@ -147,7 +147,7 @@ export default async function HandoffPage({ params }: { params: Promise<{ token:
         {accessItems.length > 0 && (
           <div className="mb-6 rounded-xl border border-border bg-card p-5">
             <h2 className="mb-1 text-sm font-semibold">Your accounts</h2>
-            <p className="mb-3 text-[11px] text-muted-foreground">
+            <p className="mb-3 text-xs text-muted-foreground">
               For security, passwords aren&apos;t shown here — reach out if you need one reset or shared.
             </p>
             <ul className="divide-y divide-border">
@@ -174,7 +174,7 @@ export default async function HandoffPage({ params }: { params: Promise<{ token:
           </div>
         )}
 
-        <p className="text-center text-[11px] text-muted-foreground">This is a private, read-only summary link.</p>
+        <p className="text-center text-xs text-muted-foreground">This is a private, read-only summary link.</p>
       </div>
     </div>
   );

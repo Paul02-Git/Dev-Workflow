@@ -34,7 +34,7 @@ export function HandoffLinkPanel({
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#f2effc] text-[#7c5cf0]">
             <GlobeIcon className="size-5" />
           </span>
-          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Client Portal / Handoff</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Project Handoff Link</h2>
         </div>
         {active && (
           <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#0ca30c]">
@@ -45,7 +45,7 @@ export function HandoffLinkPanel({
       </div>
 
       <div className="mb-3">
-        <div className="text-[11px] text-muted-foreground">Client view last accessed</div>
+        <div className="text-xs text-muted-foreground">Client view last accessed</div>
         {!active ? (
           <div className="text-sm font-semibold text-[#c4c2bb]">—</div>
         ) : lastViewedAt ? (
@@ -61,7 +61,7 @@ export function HandoffLinkPanel({
         )}
       </div>
 
-      <p className="mb-3 text-[11px] text-muted-foreground">
+      <p className="mb-3 text-xs text-muted-foreground">
         Share a read-only view with your client so they can see project progress, completed work, and
         what&apos;s next. Never includes passwords.
       </p>
@@ -106,7 +106,7 @@ export function HandoffLinkPanel({
             target="_blank"
             className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
-            Open client portal <ArrowRightIcon className="size-3" />
+Open handoff page <ArrowRightIcon className="size-3" />
           </Link>
           <button
             type="button"

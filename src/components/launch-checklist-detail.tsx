@@ -7,11 +7,13 @@ import { groupChecklistByStage, truncateChecklistGroups, type ChecklistTask } fr
 const MINIMIZED_LIMIT = 9;
 
 /**
- * Full per-stage launch checklist — lives at the top of the Tasks tab.
- * Expanded (no scroll) by default; can be minimized down to a capped
- * preview (still at least `MINIMIZED_LIMIT` tasks) when the full list is
- * taking up more room than wanted. Command Center shows its own compact
- * preview (`LaunchChecklistCard`) with a "View all" link that lands here.
+ * Full per-stage launch checklist — its own Launch tab, next to QA (it's
+ * cross-cutting critical work — Security, QA, Handoff, etc. — not just
+ * build-stage tasks, so it never fit cleanly inside Tasks). Expanded (no
+ * scroll) by default; can be minimized down to a capped preview (still at
+ * least `MINIMIZED_LIMIT` tasks) when the full list is taking up more room
+ * than wanted. Command Center shows its own compact preview
+ * (`LaunchChecklistCard`) with a "View all" link that lands here.
  */
 export function LaunchChecklistDetail({ tasks }: { tasks: ChecklistTask[] }) {
   const [minimized, setMinimized] = useState(false);
@@ -27,9 +29,9 @@ export function LaunchChecklistDetail({ tasks }: { tasks: ChecklistTask[] }) {
     : { groups: Array.from(byStage.entries()) };
 
   return (
-    <div id="launch-checklist" className="app-card mb-4 scroll-mt-4 p-4">
+    <div className="app-card mb-3 p-4">
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+        <h2 className="shrink-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
           Launch checklist · {doneCount}/{tasks.length}
         </h2>
         <div className="flex-1" />

@@ -19,7 +19,7 @@ export default function TemplatesPage() {
       <h1 className="mb-1 text-xl font-semibold">Workflow Templates</h1>
       <p className="mb-6 text-sm text-[#52514e]">
         Read-only view of the {ALL_TEMPLATES.length} templates the workflow engine draws from. Edit these in{" "}
-        <code className="rounded bg-black/5 px-1 py-0.5 text-[11px]">src/data/templates/*.ts</code>.
+        <code className="rounded bg-black/5 px-1 py-0.5 text-xs">src/data/templates/*.ts</code>.
       </p>
 
       <h2 className="mb-2 text-sm font-semibold text-[#52514e]">Always included</h2>
@@ -52,12 +52,12 @@ function TemplateCard({ template }: { template: (typeof ALL_TEMPLATES)[number] }
             <div className="flex items-center gap-2">
               <span className="font-medium">{task.title}</span>
               {task.isCritical && (
-                <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-[10px] font-bold text-[#d03b3b]">
+                <span className="rounded-full bg-[#fbe6e6] px-1.5 py-0.5 text-xs font-bold text-[#d03b3b]">
                   CRITICAL
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{stageNameByKey.get(task.stage) ?? task.stage}</span>
               <span style={{ color: PRIORITY_COLORS[task.priority ?? "MEDIUM"] }}>
                 {task.priority ?? "MEDIUM"}

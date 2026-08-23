@@ -33,6 +33,14 @@ export function DashboardRecentActivity({ activity }: { activity: ProjectActivit
     groups.get(key)!.items.push(row);
   }
   const dayGroups = Array.from(groups.values()).slice(0, 4);
+  // Tasks actually finished today, not a raw event count — "16 today" or
+  // "3 projects today" both just describe how much log noise exists, not
+  // whether anything got done. Real completions is the one number worth
+  // seeing before you even scroll the feed below it.
+  const todayItems = groups.get(dayKey(new Date()))?.items ?? [];
+  const doneTodayCount = todayItems.filter(
+    (row) => row.action === "task_status_changed" && row.detail === "DONE"
+  ).length;
 
   return (
     <div className="app-card p-4">
@@ -44,8 +52,12 @@ export function DashboardRecentActivity({ activity }: { activity: ProjectActivit
           <h2 className="text-base font-semibold">Recent Activity</h2>
         </div>
         {activity.length > 0 && (
-          <span className="shrink-0 rounded-full bg-[#eafaea] px-2.5 py-1 text-[10px] font-bold text-[#0ca30c]">
-            {activity.length} update{activity.length === 1 ? "" : "s"}
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
+              doneTodayCount > 0 ? "bg-[#eafaea] text-[#0ca30c]" : "bg-black/5 text-muted-foreground"
+            }`}
+          >
+            {doneTodayCount > 0 ? `${doneTodayCount} done today` : "Nothing done today"}
           </span>
         )}
       </div>

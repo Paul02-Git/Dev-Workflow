@@ -66,7 +66,7 @@ export function DashboardPanelProjectPicker({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{p.name}</div>
-                  <div className="truncate text-[10px] text-muted-foreground">{p.clientName}</div>
+                  <div className="truncate text-xs text-muted-foreground">{p.clientName}</div>
                 </div>
                 {isCurrent && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
               </div>

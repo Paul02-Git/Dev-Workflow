@@ -19,7 +19,7 @@ export function SearchTrigger({
       )}
     >
       <span>{placeholder}</span>
-      <span className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[10px]">Ctrl K</span>
+      <span className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs">Ctrl K</span>
     </button>
   );
 }

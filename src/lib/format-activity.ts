@@ -41,6 +41,14 @@ export function formatActivitySentence(row: ActivityRow): { actor: string; rest:
       return { actor, rest: "viewed the handoff page" };
     case "maintenance_run_generated":
       return { actor, rest: row.detail ? `generated a maintenance checklist — ${row.detail}` : "generated a maintenance checklist" };
+    case "client_file_uploaded":
+      return { actor, rest: row.detail ? `uploaded a file: ${row.detail}` : "uploaded a file" };
+    case "message_posted":
+    case "client_message_posted": {
+      const body = row.detail ?? "";
+      const truncated = body.length > 60 ? `${body.slice(0, 60)}…` : body;
+      return { actor, rest: `sent a message: "${truncated}"` };
+    }
     default:
       return { actor, rest: row.detail ? `${row.action.replace(/_/g, " ")}: ${row.detail}` : row.action.replace(/_/g, " ") };
   }

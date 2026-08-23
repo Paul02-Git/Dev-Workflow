@@ -1,7 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient, deleteClient } from "@/lib/queries/clients";
+import {
+  createClient,
+  updateClient,
+  deleteClient,
+  createClientViaIntake,
+  getClientByPortalToken,
+  generateClientPortalLink,
+  revokeClientPortalLink,
+  verifyClientOwnsProject,
+} from "@/lib/queries/clients";
 import {
   createProjectWithWorkflow,
   updateTaskStatus,
@@ -37,14 +46,35 @@ import {
   deleteMaintenancePlan,
   generateMaintenanceRun,
 } from "@/lib/queries/maintenance";
-import { generateHandoffLink, revokeHandoffLink } from "@/lib/queries/projects";
-import { uploadTaskAttachment, uploadProjectAttachment, replaceAttachment } from "@/lib/storage";
+import {
+  generateHandoffLink,
+  revokeHandoffLink,
+  postProjectMessage,
+  getMessageOwnership,
+  deleteProjectMessage,
+  deleteAllProjectMessages,
+  getAttachmentProjectId,
+} from "@/lib/queries/projects";
+import {
+  uploadTaskAttachment,
+  uploadProjectAttachment,
+  uploadMessageAttachment,
+  replaceAttachment,
+  getSignedAttachmentUrl,
+} from "@/lib/storage";
+import { isValidIntakeToken, generateIntakeToken, revokeIntakeToken } from "@/lib/queries/agency-settings";
+import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
+import { PROJECT_TYPES } from "@/data/project-types";
 
+// No redirect — this now opens from a modal on the clients list itself
+// (see CreateClientForm), so the useful outcome is the dialog closing and
+// the new card appearing in the grid you're already looking at, not a
+// navigation away from it.
 export async function createClientAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Client name is required");
 
-  const client = await createClient({
+  await createClient({
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
@@ -53,7 +83,22 @@ export async function createClientAction(formData: FormData) {
   });
 
   revalidatePath("/clients");
-  redirect(`/clients/${client.id}`);
+}
+
+export async function updateClientAction(formData: FormData) {
+  const clientId = String(formData.get("clientId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!clientId || !name) throw new Error("Client name is required");
+
+  await updateClient(clientId, {
+    name,
+    company: String(formData.get("company") ?? "") || undefined,
+    contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
+    contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
+  });
+
+  revalidatePath("/clients");
+  revalidatePath(`/clients/${clientId}`);
 }
 
 export async function createProjectAction(formData: FormData) {
@@ -147,6 +192,25 @@ export async function removeTaskAttachmentAction(attachmentId: string) {
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
+/**
+ * Resolves signed URLs on demand for a specific set of storage-backed
+ * attachments — called only when a task's details modal actually opens,
+ * instead of the project page resolving every attachment on every task up
+ * front (the real cause of slow/blocked page loads on projects with many
+ * attachments — see the comment in projects/[id]/page.tsx).
+ */
+export async function resolveAttachmentUrlsAction(
+  items: { id: string; storagePath: string | null }[]
+): Promise<Record<string, string | null>> {
+  const results: Record<string, string | null> = {};
+  await Promise.all(
+    items.map(async (item) => {
+      if (item.storagePath) results[item.id] = await getSignedAttachmentUrl(item.storagePath);
+    })
+  );
+  return results;
+}
+
 export async function bulkRemoveAttachmentsAction(attachmentIds: string[]) {
   const projectIds = await bulkRemoveAttachments(attachmentIds);
   for (const id of projectIds) revalidatePath(`/projects/${id}`);
@@ -169,10 +233,31 @@ export async function deleteProjectAction(projectId: string) {
   redirect("/projects");
 }
 
+/**
+ * Same delete as deleteProjectAction, minus the redirect — for callers
+ * already sitting on /projects (the list's row menu, bulk-delete) that
+ * don't need to navigate anywhere. deleteProjectAction's redirect() throws
+ * a control-flow signal that's only appropriate for a single top-level
+ * call from a project's own page; calling it repeatedly in a bulk
+ * Promise.all, or from a row that isn't navigating away, would be wrong.
+ */
+export async function deleteProjectFromListAction(projectId: string) {
+  await deleteProject(projectId);
+  revalidatePath("/projects");
+  revalidatePath("/clients");
+  revalidatePath("/dashboard");
+}
+
 export async function deleteClientAction(clientId: string) {
   await deleteClient(clientId);
   revalidatePath("/clients");
   redirect("/clients");
+}
+
+/** Same delete as deleteClientAction, minus the redirect — for a kebab menu on the clients list itself, which is already where deleteClientAction's redirect would send you. */
+export async function deleteClientFromListAction(clientId: string) {
+  await deleteClient(clientId);
+  revalidatePath("/clients");
 }
 
 export async function createTaskAction(formData: FormData) {
@@ -346,7 +431,7 @@ export async function createMaintenancePlanAction(formData: FormData) {
 
 export async function updateMaintenancePlanAction(
   planId: string,
-  input: { isActive?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
+  input: { isActive?: boolean; isPaid?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
 ) {
   await updateMaintenancePlan(planId, input);
   revalidatePath("/maintenance");
@@ -374,6 +459,218 @@ export async function generateHandoffLinkAction(projectId: string) {
 
 export async function revokeHandoffLinkAction(projectId: string) {
   await revokeHandoffLink(projectId);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Client Portal — one client-level link giving a client a dashboard of
+// every project they have (distinct from the per-project handoff link
+// above, which stays as a separate, still-useful read-only summary link).
+// ---------------------------------------------------------------------------
+
+export async function generateClientPortalLinkAction(clientId: string) {
+  const token = await generateClientPortalLink(clientId);
+  revalidatePath(`/clients/${clientId}`);
+  return token;
+}
+
+export async function revokeClientPortalLinkAction(clientId: string) {
+  await revokeClientPortalLink(clientId);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+// One reusable, agency-wide link — not per-client — that creates a new
+// client from whoever fills it out.
+export async function generateIntakeLinkAction() {
+  return generateIntakeToken();
+}
+
+export async function revokeIntakeLinkAction() {
+  await revokeIntakeToken();
+  revalidatePath("/clients");
+}
+
+/**
+ * Public — no requireAuth(), gated purely by the agency-wide intake token
+ * (same trust model as every handoff/portal token in this app: unguessable,
+ * not a password). Always creates a new client; if a project type was
+ * selected, also generates a real project via the same
+ * createProjectWithWorkflow() the internal /projects/new wizard uses — the
+ * workflow engine doesn't know or care whether the caller was Paul or a
+ * client filling out intake.
+ */
+export async function submitIntakeAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  if (!(await isValidIntakeToken(token))) throw new Error("This intake link is no longer valid.");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Name is required");
+
+  const { client, portalToken } = await createClientViaIntake({
+    name,
+    company: String(formData.get("company") ?? "") || undefined,
+    contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
+    contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
+    address: String(formData.get("address") ?? "") || undefined,
+  });
+  revalidatePath("/clients");
+
+  const projectType = String(formData.get("projectType") ?? "");
+  let newProjectId: string | null = null;
+  if (projectType && (PROJECT_TYPES as readonly string[]).includes(projectType)) {
+    const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
+    const technologyKeys = formData.getAll("technologies").map(String);
+    const project = await createProjectWithWorkflow({ clientId: client.id, name: projectName, projectType, technologyKeys });
+    newProjectId = project.id;
+  }
+
+  redirect(newProjectId ? `/portal/${portalToken}/projects/${newProjectId}` : `/portal/${portalToken}`);
+}
+
+/** Public — token resolves to a client, no requireAuth(). Updates the same fields the internal Clients page manages. */
+export async function updateClientPortalInfoAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const client = await getClientByPortalToken(token);
+  if (!client) throw new Error("This portal link is no longer valid.");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Name is required");
+
+  await updateClient(client.id, {
+    name,
+    company: String(formData.get("company") ?? "") || undefined,
+    contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
+    contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
+    address: String(formData.get("address") ?? "") || undefined,
+  });
+  revalidatePath(`/portal/${token}`);
+}
+
+/**
+ * Public. Re-derives the client from `token` and verifies the project
+ * belongs to them via getClientProjectPortalDetail's own ownership check —
+ * never trusts `projectId` from the form alone.
+ */
+export async function postClientCommentAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
+  if (!body) throw new Error("Comment can't be empty");
+
+  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+
+  await postProjectMessage(projectId, CLIENT_ACTOR_NAME, body);
+  revalidatePath(`/portal/${token}/projects/${projectId}`);
+}
+
+export async function uploadClientProjectFileAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("Missing file");
+
+  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+
+  await uploadProjectAttachment(projectId, file, { fromClient: true });
+  revalidatePath(`/portal/${token}/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/**
+ * Public — deletes a file for real, same as the internal Files tab's
+ * delete. Deliberately doesn't take a `projectId` from the form; it
+ * resolves the attachment's real project itself and checks that against
+ * the token, so a client can never delete a file by guessing an id that
+ * happens to belong to a different project.
+ */
+export async function deleteClientFileAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const attachmentId = String(formData.get("attachmentId") ?? "");
+
+  const attachmentProjectId = await getAttachmentProjectId(attachmentId);
+  // Already gone (a race between this and a poll refetch) is not an error —
+  // the end state the caller wants (this file gone) is already true.
+  if (!attachmentProjectId) return;
+  if (!(await verifyClientOwnsProject(token, attachmentProjectId))) throw new Error("This link is no longer valid for that project.");
+
+  await removeTaskAttachment(attachmentId);
+  revalidatePath(`/portal/${token}/projects/${attachmentProjectId}`);
+  revalidatePath(`/projects/${attachmentProjectId}`);
+}
+
+/** Public — uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
+export async function uploadClientChatFileAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("Missing file");
+
+  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+
+  const message = await postProjectMessage(projectId, CLIENT_ACTOR_NAME, file.name);
+  await uploadMessageAttachment(projectId, message.id, file, { fromClient: true });
+  revalidatePath(`/portal/${token}/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Public — a client may only delete their own messages, never Paul's. */
+export async function deleteClientMessageAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const messageId = String(formData.get("messageId") ?? "");
+
+  const message = await getMessageOwnership(messageId);
+  if (!message) return; // Already deleted — nothing to do.
+  if (message.authorName !== CLIENT_ACTOR_NAME) throw new Error("Can't delete this message.");
+  if (!(await verifyClientOwnsProject(token, message.projectId))) throw new Error("This link is no longer valid for that project.");
+
+  await deleteProjectMessage(messageId);
+  revalidatePath(`/portal/${token}/projects/${message.projectId}`);
+  revalidatePath(`/projects/${message.projectId}`);
+}
+
+/** Public — wipes the entire thread for this project, both authors' messages. */
+export async function deleteAllClientMessagesAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+
+  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+
+  await deleteAllProjectMessages(projectId);
+  revalidatePath(`/portal/${token}/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Internal — Paul's reply from the project page's Messages tab. */
+export async function postProjectMessageAction(formData: FormData) {
+  const projectId = String(formData.get("projectId") ?? "");
+  const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
+  if (!projectId || !body) throw new Error("Message can't be empty");
+  await postProjectMessage(projectId, AGENCY_OWNER_NAME, body);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Internal — uploads a file as its own chat message rather than attaching it to whatever's currently typed. */
+export async function uploadChatFileAction(formData: FormData) {
+  const projectId = String(formData.get("projectId") ?? "");
+  const file = formData.get("file");
+  if (!projectId || !(file instanceof File)) throw new Error("Missing project or file");
+
+  const message = await postProjectMessage(projectId, AGENCY_OWNER_NAME, file.name);
+  await uploadMessageAttachment(projectId, message.id, file);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Internal — Paul can delete any message, not just his own (he owns the record). */
+export async function deleteProjectMessageAction(formData: FormData) {
+  const messageId = String(formData.get("messageId") ?? "");
+  const message = await getMessageOwnership(messageId);
+  if (!message) return; // Already deleted — nothing to do.
+  await deleteProjectMessage(messageId);
+  revalidatePath(`/projects/${message.projectId}`);
+}
+
+export async function deleteAllProjectMessagesAction(projectId: string) {
+  await deleteAllProjectMessages(projectId);
   revalidatePath(`/projects/${projectId}`);
 }
 

@@ -1,10 +1,11 @@
-import Link from "next/link";
 import Image from "next/image";
 import { logoutAction } from "@/lib/auth-actions";
 import { CommandPalette } from "@/components/command-palette";
 import { SearchTrigger } from "@/components/search-trigger";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { SidebarNav } from "@/components/sidebar-nav";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
+import { withTimeout } from "@/lib/with-timeout";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -18,7 +19,16 @@ const NAV = [
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const switcherProjects = await listProjectsForSwitcher();
+  // This runs on every page in the app, so it must never be able to take
+  // the whole layout down — timeout-protected, and any failure (timeout or
+  // otherwise) falls back to an empty switcher instead of throwing, since
+  // a missing dropdown is a much smaller problem than every page crashing.
+  let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
+  try {
+    switcherProjects = await withTimeout(listProjectsForSwitcher(), 5000, "project switcher");
+  } catch {
+    // swallow — empty switcher is an acceptable degraded state
+  }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -29,7 +39,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <div className="text-sm font-semibold leading-tight">
               DEV<span className="text-[#2a78d6]">OS</span>
             </div>
-            <div className="text-[11px] text-muted-foreground">MVP</div>
+            <div className="text-xs text-muted-foreground">MVP</div>
           </div>
         </div>
         {/* Jumping straight to a specific project is the most frequent
@@ -40,17 +50,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mb-4">
           <ProjectSwitcher projects={switcherProjects} />
         </div>
-        <nav className="flex flex-col gap-1">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2 text-sm font-medium text-[#52514e] hover:bg-[#cde2fb] hover:text-[#184f95]"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <SidebarNav items={NAV} />
         <div className="mt-4 border-t border-border pt-3">
           <SearchTrigger />
           <form action={logoutAction}>

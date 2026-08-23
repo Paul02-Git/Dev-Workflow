@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   updateTaskDetailsAction,
   addTaskAttachmentAction,
   removeTaskAttachmentAction,
   uploadTaskAttachmentAction,
+  resolveAttachmentUrlsAction,
 } from "@/lib/actions";
 import {
   Dialog,
@@ -15,10 +16,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// url here is always a ready-to-use link — resolved server-side (signed URL
-// for uploaded files, verbatim for pasted external links) before this
-// component ever sees it.
-type Attachment = { id: string; url: string | null; label: string | null };
+// url is already a ready-to-use link for pasted external attachments; for
+// uploaded files (storagePath set) it's null here on purpose — the project
+// page no longer eagerly signs every task's attachments on every load
+// (that used to block the whole page on one Storage API call per
+// attachment). This panel resolves them itself, only when actually opened.
+type Attachment = { id: string; url: string | null; storagePath: string | null; label: string | null };
 
 function toDateInputValue(date: Date | string | null): string {
   if (!date) return "";
@@ -52,7 +55,7 @@ export function TaskDetailsToggle({
     <Dialog>
       <DialogTrigger
         render={
-          <button type="button" className="text-[11px] font-medium text-primary hover:underline">
+          <button type="button" className="text-xs font-medium text-primary hover:underline">
             {hasDetails ? "Details •" : "Add details"}
           </button>
         }
@@ -82,6 +85,22 @@ function TaskDetailsForm({
   const [notesValue, setNotesValue] = useState(notes ?? "");
   const [newAttachmentUrl, setNewAttachmentUrl] = useState("");
   const [newAttachmentLabel, setNewAttachmentLabel] = useState("");
+  const [resolvedUrls, setResolvedUrls] = useState<Record<string, string | null>>({});
+
+  // Resolved once this modal actually opens (this component only mounts
+  // then), and again whenever a newly-uploaded attachment shows up —
+  // never on the project page's initial load.
+  const unresolved = attachments.filter((a) => a.storagePath && !a.url && !(a.id in resolvedUrls));
+  const unresolvedKey = unresolved.map((a) => a.id).join(",");
+  useEffect(() => {
+    if (unresolved.length === 0) return;
+    resolveAttachmentUrlsAction(unresolved.map((a) => ({ id: a.id, storagePath: a.storagePath }))).then((map) => {
+      setResolvedUrls((prev) => ({ ...prev, ...map }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on unresolvedKey deliberately, not the unresolved array itself
+  }, [unresolvedKey]);
+
+  const displayAttachments = attachments.map((a) => ({ ...a, url: a.url ?? resolvedUrls[a.id] ?? null }));
 
   return (
     <div className="space-y-3">
@@ -109,7 +128,7 @@ function TaskDetailsForm({
       <div>
         <span className="mb-1 block text-xs font-semibold text-muted-foreground">Attachments</span>
         <div className="space-y-1">
-          {attachments.map((a) => (
+          {displayAttachments.map((a) => (
             <div key={a.id} className="flex items-center gap-2 text-sm">
               {a.url ? (
                 <a
@@ -121,7 +140,9 @@ function TaskDetailsForm({
                   {a.label || a.url}
                 </a>
               ) : (
-                <span className="truncate text-muted-foreground">{a.label || "(link unavailable)"}</span>
+                <span className="truncate text-muted-foreground">
+                  {a.storagePath ? `${a.label || "Attachment"} — loading…` : a.label || "(link unavailable)"}
+                </span>
               )}
               <button
                 type="button"
