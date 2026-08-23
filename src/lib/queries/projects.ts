@@ -28,7 +28,6 @@ import { CLIENT_ACTION_CANONICAL_KEYS } from "@/data/client-action-keys";
 import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { CLIENT_PORTAL_PHASES } from "@/data/client-portal-phases";
 import { withTimeout } from "@/lib/with-timeout";
-import { getClientByPortalToken } from "@/lib/queries/clients";
 
 export async function listProjects(organizationId: string) {
   const rows = await db
@@ -676,7 +675,7 @@ export async function bulkRemoveAttachments(attachmentIds: string[], organizatio
   return Array.from(projectIds);
 }
 
-/** Looks up which project an attachment belongs to — used to authorize a client's delete request before touching anything. Deliberately NOT organization-scoped: this is called from public, token-gated actions before any organization is known, purely to find the project so the caller's own token-ownership check (verifyClientOwnsProject) can then run against it. */
+/** Looks up which project an attachment belongs to — used to authorize a client's delete request before touching anything. Deliberately NOT organization-scoped: this is called from public, session-gated actions before any organization is known, purely to find the project so the caller's own ownership check (verifyClientOwnsProjectBySession) can then run against it. */
 export async function getAttachmentProjectId(attachmentId: string): Promise<string | null> {
   const [row] = await db.select({ projectId: attachments.projectId }).from(attachments).where(eq(attachments.id, attachmentId));
   return row?.projectId ?? null;
@@ -1440,19 +1439,19 @@ async function getClientPhaseStageRows(projectId: string) {
 }
 
 /**
- * Client Portal drill-down — resolves the client from their *client-level*
- * portalToken (not a project-level token), then verifies the requested
- * project actually belongs to that client before returning anything. This
- * ownership check is the one thing standing between a client and being
- * able to view another client's project by guessing a projectId in the
- * URL — never skip it.
+ * Client Workspace's per-project detail (the Projects tab) — resolves via
+ * the logged-in client's own id (from requireClientAuth()'s session, never
+ * request input), then verifies the requested project actually belongs to
+ * that client before returning anything. This ownership check is the one
+ * thing standing between a client and being able to view another client's
+ * project by guessing a projectId — never skip it.
  */
-export async function getClientProjectPortalDetail(portalToken: string, projectId: string) {
+export async function getClientProjectPortalDetail(clientId: string, projectId: string) {
   const [row] = await db
-    .select({ project: projects, clientId: clients.id, clientName: clients.name })
+    .select({ project: projects, clientName: clients.name })
     .from(clients)
     .innerJoin(projects, eq(projects.clientId, clients.id))
-    .where(and(eq(clients.portalToken, portalToken), eq(projects.id, projectId)));
+    .where(and(eq(clients.id, clientId), eq(projects.id, projectId)));
   if (!row) return null;
   const { project, clientName } = row;
 
@@ -1483,8 +1482,8 @@ export async function getClientProjectPortalDetail(portalToken: string, projectI
  * "next up" are derived straight from real task state instead, which is
  * inherently client-appropriate.
  */
-export async function getClientWorkspaceOverview(token: string) {
-  const client = await getClientByPortalToken(token);
+export async function getClientWorkspaceOverview(clientId: string) {
+  const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) return null;
 
   const clientProjects = await db.select().from(projects).where(eq(projects.clientId, client.id));

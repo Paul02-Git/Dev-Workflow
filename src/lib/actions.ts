@@ -6,11 +6,13 @@ import {
   updateClient,
   deleteClient,
   createClientViaIntake,
-  getClientByPortalToken,
-  generateClientPortalLink,
-  revokeClientPortalLink,
-  verifyClientOwnsProject,
+  generateClientInviteLink,
+  revokeClientInviteLink,
+  verifyClientOwnsProjectBySession,
+  setClientPassword,
+  getClientRecordForSelf,
 } from "@/lib/queries/clients";
+import { cookies } from "next/headers";
 import {
   createProjectWithWorkflow,
   updateTaskStatus,
@@ -35,7 +37,15 @@ import {
   revealAccessItemPassword,
   clearAccessItemCredentials,
 } from "@/lib/queries/access-items";
-import { requireAuth } from "@/lib/auth";
+import {
+  requireAuth,
+  requireClientAuth,
+  makeClientSessionCookieValue,
+  CLIENT_SESSION_COOKIE_NAME,
+  checkClientLoginRateLimit,
+  recordClientLoginAttempt,
+  verifyClientPassword,
+} from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ALL_ACCESS_ITEM_PRESETS } from "@/data/access-item-presets";
 import { searchAll, type SearchResult } from "@/lib/queries/search";
@@ -495,21 +505,21 @@ export async function revokeHandoffLinkAction(projectId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Client Portal — one client-level link giving a client a dashboard of
-// every project they have (distinct from the per-project handoff link
-// above, which stays as a separate, still-useful read-only summary link).
+// Client Workspace — a real client login (distinct from the per-project
+// handoff link above, which stays as a separate, still-useful read-only
+// summary link that needs no account at all).
 // ---------------------------------------------------------------------------
 
-export async function generateClientPortalLinkAction(clientId: string) {
+export async function generateClientInviteLinkAction(clientId: string) {
   const { organizationId } = await requireAuth();
-  const token = await generateClientPortalLink(clientId, organizationId);
+  const token = await generateClientInviteLink(clientId, organizationId);
   revalidatePath(`/clients/${clientId}`);
   return token;
 }
 
-export async function revokeClientPortalLinkAction(clientId: string) {
+export async function revokeClientInviteLinkAction(clientId: string) {
   const { organizationId } = await requireAuth();
-  await revokeClientPortalLink(clientId, organizationId);
+  await revokeClientInviteLink(clientId, organizationId);
   revalidatePath(`/clients/${clientId}`);
 }
 
@@ -546,7 +556,7 @@ export async function submitIntakeAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required");
 
-  const { client, portalToken } = await createClientViaIntake({
+  const { client, inviteToken } = await createClientViaIntake({
     organizationId,
     name,
     company: String(formData.get("company") ?? "") || undefined,
@@ -557,50 +567,100 @@ export async function submitIntakeAction(formData: FormData) {
   revalidatePath("/clients");
 
   const projectType = String(formData.get("projectType") ?? "");
-  let newProjectId: string | null = null;
   if (projectType && (PROJECT_TYPES as readonly string[]).includes(projectType)) {
     const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
     const technologyKeys = formData.getAll("technologies").map(String);
-    const project = await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
-    newProjectId = project.id;
+    await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
   }
 
-  redirect(newProjectId ? `/portal/${portalToken}/projects/${newProjectId}` : `/portal/${portalToken}`);
+  // Not a login yet — the client still needs to set a password at this
+  // link before they can see their new workspace (see setClientPassword).
+  redirect(`/client-invite/${inviteToken}`);
 }
 
-/** Public — token resolves to a client, no requireAuth(). Updates the same fields the internal Clients page manages. */
+/** Public — no organization login involved. Sets the client session cookie on success; the invite-setup flow (setClientPasswordAction below) is what actually creates the password this checks against. */
+export async function clientLoginAction(formData: FormData) {
+  const loginSlug = String(formData.get("loginSlug") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+
+  const client = await verifyClientPassword(loginSlug, password);
+  const rateLimit = await checkClientLoginRateLimit(client?.id ?? loginSlug);
+  if (!rateLimit.allowed) redirect(`/client-login?error=rate_limited`);
+
+  await recordClientLoginAttempt(client?.id ?? null, !!client);
+  if (!client) redirect("/client-login?error=invalid");
+
+  const store = await cookies();
+  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(client.id), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  redirect("/portal");
+}
+
+export async function clientLogoutAction() {
+  const store = await cookies();
+  store.delete(CLIENT_SESSION_COOKIE_NAME);
+  redirect("/client-login");
+}
+
+/** Public — completes an invite (or password reset) link: sets loginSlug+password and logs the client straight in. */
+export async function setClientPasswordAction(formData: FormData) {
+  const inviteToken = String(formData.get("inviteToken") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
+  if (password.length < 8) redirect(`/client-invite/${inviteToken}?error=short_password`);
+  if (password !== passwordConfirm) redirect(`/client-invite/${inviteToken}?error=mismatch`);
+
+  const result = await setClientPassword(inviteToken, password);
+  if (!result) redirect("/client-login?error=invalid_invite");
+
+  const store = await cookies();
+  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(result.id), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  redirect("/portal");
+}
+
+/** Updates the same fields the internal Clients page manages. clientId comes from the client's own session, never request input. */
 export async function updateClientPortalInfoAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
-  const client = await getClientByPortalToken(token);
-  if (!client) throw new Error("This portal link is no longer valid.");
+  const { clientId } = await requireClientAuth();
+  const client = await getClientRecordForSelf(clientId);
+  if (!client?.organizationId) throw new Error("This client has no organization assigned yet.");
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required");
-  if (!client.organizationId) throw new Error("This client has no organization assigned yet.");
 
-  await updateClient(client.id, client.organizationId, {
+  await updateClient(clientId, client.organizationId, {
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
     contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
     address: String(formData.get("address") ?? "") || undefined,
   });
-  revalidatePath(`/portal/${token}`);
+  revalidatePath("/portal");
 }
 
 /**
- * Public. Re-derives the client from `token` and verifies the project
- * belongs to them via getClientProjectPortalDetail's own ownership check —
- * never trusts `projectId` from the form alone.
+ * Verifies the project belongs to the logged-in client via
+ * verifyClientOwnsProjectBySession — never trusts `projectId` from the
+ * form alone.
  */
 export async function postClientCommentAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!body) throw new Error("Comment can't be empty");
 
-  const orgId = await verifyClientOwnsProject(token, projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath here: PortalComments already refetches this thread
   // itself right after this action resolves. Calling revalidatePath on the
@@ -614,96 +674,96 @@ export async function postClientCommentAction(formData: FormData) {
 }
 
 /**
- * Public — the Client Workspace's "Review" button. Re-verifies ownership
- * via the token (never trusts projectId/taskId from the form alone) and
+ * The Client Workspace's "Review" button. Re-verifies ownership via the
+ * session (never trusts projectId/taskId from the form alone) and
  * markClientActionTaskDone() itself re-checks the task is a real client
  * action before writing, so a crafted request can't mark arbitrary work
  * done through this path.
  */
 export async function markClientActionDoneAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const taskId = String(formData.get("taskId") ?? "");
 
-  const orgId = await verifyClientOwnsProject(token, projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   await markClientActionTaskDone(taskId, projectId, orgId);
-  revalidatePath(`/portal/${token}`);
+  revalidatePath("/portal");
 }
 
 export async function uploadClientProjectFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("Missing file");
 
-  const orgId = await verifyClientOwnsProject(token, projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
   await uploadProjectAttachment(projectId, orgId, file, { fromClient: true });
 }
 
 /**
- * Public — deletes a file for real, same as the internal Files tab's
- * delete. Deliberately doesn't take a `projectId` from the form; it
- * resolves the attachment's real project itself and checks that against
- * the token, so a client can never delete a file by guessing an id that
- * happens to belong to a different project.
+ * Deletes a file for real, same as the internal Files tab's delete.
+ * Deliberately doesn't take a `projectId` from the form; it resolves the
+ * attachment's real project itself and checks that against the session, so
+ * a client can never delete a file by guessing an id that happens to
+ * belong to a different project.
  */
 export async function deleteClientFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const attachmentId = String(formData.get("attachmentId") ?? "");
 
   const attachmentProjectId = await getAttachmentProjectId(attachmentId);
   // Already gone (a race between this and a poll refetch) is not an error —
   // the end state the caller wants (this file gone) is already true.
   if (!attachmentProjectId) return;
-  const orgId = await verifyClientOwnsProject(token, attachmentProjectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, attachmentProjectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
   await removeTaskAttachment(attachmentId, orgId);
 }
 
-/** Public — uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
+/** Uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
 export async function uploadClientChatFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("Missing file");
 
-  const orgId = await verifyClientOwnsProject(token, projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
   const message = await postProjectMessage(projectId, orgId, CLIENT_ACTOR_NAME, file.name);
   await uploadMessageAttachment(projectId, orgId, message.id, file, { fromClient: true });
 }
 
-/** Public — a client may only delete their own messages, never Paul's. */
+/** A client may only delete their own messages, never Paul's. */
 export async function deleteClientMessageAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const messageId = String(formData.get("messageId") ?? "");
 
   const message = await getMessageOwnership(messageId);
   if (!message) return; // Already deleted — nothing to do.
   if (message.authorName !== CLIENT_ACTOR_NAME) throw new Error("Can't delete this message.");
-  const orgId = await verifyClientOwnsProject(token, message.projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, message.projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
   await deleteProjectMessage(messageId, orgId);
 }
 
-/** Public — wipes the entire thread for this project, both authors' messages. */
+/** Wipes the entire thread for this project, both authors' messages. */
 export async function deleteAllClientMessagesAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
 
-  const orgId = await verifyClientOwnsProject(token, projectId);
-  if (!orgId) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — the caller already clears its own local state optimistically.
   await deleteAllProjectMessages(projectId, orgId);

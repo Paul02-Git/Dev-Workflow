@@ -111,10 +111,20 @@ export const clients = pgTable("clients", {
   contactPhone: text("contact_phone"),
   address: text("address"),
   notes: text("notes"),
-  // Client Portal — a persistent, unguessable link (same pattern as
-  // projects.handoffToken, one level up) giving the client themselves
-  // access to a dashboard of all their projects, no login required.
-  portalToken: text("portal_token").unique(),
+  // One-time setup/reset link (same random-token shape the old, now-retired
+  // portalToken used) — visiting it lets the client set (or reset)
+  // loginSlug/passwordHash below via the /client-invite/[token] page.
+  // Unlike the old portalToken, this does NOT grant ongoing access by
+  // itself once a password exists; it's the invite/reset mechanism only.
+  inviteToken: text("invite_token").unique(),
+  // Real client login — a client authenticates with loginSlug + password
+  // (same scrypt-hash + HMAC-signed-session shape as organizations' own
+  // login, see src/lib/auth.ts), not a bearer token in a URL. loginSlug is
+  // globally unique (like organizations.slug) so a client can log in
+  // without needing to also know which organization they belong to.
+  // Both null until the client actually completes the invite flow.
+  loginSlug: text("login_slug").unique(),
+  passwordHash: text("password_hash"),
   // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the
   // public intake form) — lets Paul spot self-service signups at a glance
   // without needing an activity_logs entry, which requires a projectId
@@ -372,6 +382,16 @@ export const loginAttempts = pgTable("login_attempts", {
   // also nullable permanently for an attempt against an org slug that
   // doesn't exist at all (can't reference an org that was never found).
   organizationId: text("organization_id").references(() => organizations.id),
+  // Which client's password was attempted — mutually exclusive with
+  // organizationId (an attempt is against exactly one login surface, agency
+  // or client, never both). Same reasoning as organizationId above: known
+  // at attempt time once the login form identifies which client, nullable
+  // for an attempt against a loginSlug that doesn't exist at all.
+  // onDelete: "set null" (unlike organizationId above, which has no
+  // cascade — organizations are never deleted) because deleteClient() is a
+  // real, used feature: without this, deleting any client that ever had a
+  // login attempt recorded would fail with a foreign-key violation.
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
   success: boolean("success").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

@@ -25,12 +25,10 @@ function formatFileSize(bytes: number | null): string {
  * to show up here without a manual page reload.
  */
 export function PortalFiles({
-  token,
   projectId,
   initialFiles,
   mode,
 }: {
-  token: string;
   projectId: string;
   initialFiles: ClientFile[];
   mode: "preview" | "full";
@@ -49,7 +47,7 @@ export function PortalFiles({
   useEffect(() => {
     const id = setInterval(async () => {
       try {
-        const res = await fetch(`/api/portal/${token}/projects/${projectId}/files`, { cache: "no-store" });
+        const res = await fetch(`/api/portal/projects/${projectId}/files`, { cache: "no-store" });
         if (!res.ok) throw new Error(`poll failed: ${res.status}`);
         const fresh: ClientFile[] = await res.json();
         setFiles((current) => (fresh.length !== current.length ? fresh : current));
@@ -58,18 +56,17 @@ export function PortalFiles({
       }
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [token, projectId]);
+  }, [projectId]);
 
   function handleFilePicked(file: File) {
     setUploading(true);
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("projectId", projectId);
     formData.set("file", file);
     startTransition(async () => {
       try {
         await uploadClientProjectFileAction(formData);
-        const res = await fetch(`/api/portal/${token}/projects/${projectId}/files`, { cache: "no-store" });
+        const res = await fetch(`/api/portal/projects/${projectId}/files`, { cache: "no-store" });
         if (res.ok) setFiles(await res.json());
       } catch (err) {
         alert(err instanceof Error ? err.message : "Upload failed.");
@@ -83,11 +80,10 @@ export function PortalFiles({
     if (!confirm("Remove this file? This can't be undone.")) return;
     setFiles((prev) => prev.filter((f) => f.id !== attachmentId));
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("attachmentId", attachmentId);
     startTransition(async () => {
       await deleteClientFileAction(formData);
-      const res = await fetch(`/api/portal/${token}/projects/${projectId}/files`, { cache: "no-store" });
+      const res = await fetch(`/api/portal/projects/${projectId}/files`, { cache: "no-store" });
       if (res.ok) setFiles(await res.json());
     });
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { updateClientPortalInfoAction } from "@/lib/actions";
+import { updateClientPortalInfoAction, clientLogoutAction } from "@/lib/actions";
 
 type ClientInfo = {
   name: string;
@@ -11,7 +11,7 @@ type ClientInfo = {
   address: string | null;
 };
 
-export function ClientSettingsTab({ token, client }: { token: string; client: ClientInfo }) {
+export function ClientSettingsTab({ loginSlug, client }: { loginSlug: string | null; client: ClientInfo }) {
   const [saved, setSaved] = useState(false);
 
   return (
@@ -26,7 +26,6 @@ export function ClientSettingsTab({ token, client }: { token: string; client: Cl
           }}
           className="grid grid-cols-2 gap-3"
         >
-          <input type="hidden" name="token" value={token} />
           <label className="col-span-2 text-xs font-semibold text-muted-foreground sm:col-span-1">
             Name
             <input name="name" defaultValue={client.name} required className="mt-1 w-full rounded-md border border-black/15 px-3 py-2 text-sm text-foreground" />
@@ -53,6 +52,20 @@ export function ClientSettingsTab({ token, client }: { token: string; client: Cl
             </button>
             {saved && <span className="text-xs font-medium text-[#0ca30c]">Saved.</span>}
           </div>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <h2 className="mb-3 text-sm font-bold">Account</h2>
+        {loginSlug && (
+          <p className="mb-3 text-sm">
+            You log in as <strong className="font-bold">{loginSlug}</strong>. Ask Paul for a password reset link if you forget it.
+          </p>
+        )}
+        <form action={clientLogoutAction}>
+          <button type="submit" className="rounded-md border border-black/15 px-4 py-2 text-sm font-semibold text-muted-foreground hover:border-[#d03b3b] hover:text-[#d03b3b]">
+            Sign out
+          </button>
         </form>
       </section>
     </div>
