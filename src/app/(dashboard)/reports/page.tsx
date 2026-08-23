@@ -1,4 +1,5 @@
 import { listProjects, listAllTasks } from "@/lib/queries/projects";
+import { requireAuth } from "@/lib/auth";
 
 function healthColor(score: number) {
   if (score >= 85) return "#0ca30c";
@@ -7,7 +8,8 @@ function healthColor(score: number) {
 }
 
 export default async function ReportsPage() {
-  const [projects, allTasks] = await Promise.all([listProjects(), listAllTasks()]);
+  const { organizationId } = await requireAuth();
+  const [projects, allTasks] = await Promise.all([listProjects(organizationId), listAllTasks(organizationId)]);
   const topLevel = allTasks.filter((t) => !t.parentTaskId);
 
   const statusCounts = topLevel.reduce<Record<string, number>>((acc, t) => {

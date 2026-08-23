@@ -13,6 +13,7 @@ import {
 import { listAccessItems } from "@/lib/queries/access-items";
 import { listMaintenancePlansForProject } from "@/lib/queries/maintenance";
 import { withTimeout } from "@/lib/with-timeout";
+import { requireAuth } from "@/lib/auth";
 import { ProjectOverviewForm } from "@/components/project-overview-form";
 import { AccessItemsPanel } from "@/components/access-items-panel";
 import { ProjectHeader } from "@/components/project-header";
@@ -42,6 +43,7 @@ export default async function ProjectDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ filter?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const { id } = await params;
   const { filter } = await searchParams;
   const activeFilter: "waiting" | "blocked" | "critical" | "actionable" | null =
@@ -66,15 +68,15 @@ export default async function ProjectDetailPage({
     messages,
   ] = await withTimeout(
     Promise.all([
-      getProjectDetail(id),
-      listAccessItems(id),
-      getProjectIssues(id),
-      listRecentActivity(id, 3),
-      listRecentActivity(id, 500),
-      listProjectAttachmentsWithUrls(id),
-      listMaintenancePlansForProject(id),
-      getLastHandoffView(id),
-      listProjectMessages(id),
+      getProjectDetail(id, organizationId),
+      listAccessItems(id, organizationId),
+      getProjectIssues(id, organizationId),
+      listRecentActivity(id, organizationId, 3),
+      listRecentActivity(id, organizationId, 500),
+      listProjectAttachmentsWithUrls(id, organizationId),
+      listMaintenancePlansForProject(id, organizationId),
+      getLastHandoffView(id, organizationId),
+      listProjectMessages(id, organizationId),
     ]),
     8000,
     "project detail page queries"

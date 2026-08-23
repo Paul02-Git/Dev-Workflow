@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { listAllTasks } from "@/lib/queries/projects";
 import { STATUS_COLORS } from "@/components/task-status-select";
+import { requireAuth } from "@/lib/auth";
 
 export default async function QaPage() {
-  const allTasks = await listAllTasks();
+  const { organizationId } = await requireAuth();
+  const allTasks = await listAllTasks(organizationId);
   const qaTasks = allTasks.filter((t) => t.stageKey === "qa");
 
   const byProject = new Map<string, typeof qaTasks>();

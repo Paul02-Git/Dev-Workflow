@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE_NAME, isValidSessionCookieValue } from "@/lib/auth";
+import { SESSION_COOKIE_NAME, parseSessionCookieValue } from "@/lib/auth";
 
 export function proxy(request: NextRequest) {
   const sessionValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (isValidSessionCookieValue(sessionValue)) {
+  if (parseSessionCookieValue(sessionValue)) {
     return NextResponse.next();
   }
 

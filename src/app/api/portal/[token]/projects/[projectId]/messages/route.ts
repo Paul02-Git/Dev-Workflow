@@ -18,8 +18,9 @@ export async function GET(
   const { token, projectId } = await params;
   const messages = await withTimeout(
     (async () => {
-      if (!(await verifyClientOwnsProject(token, projectId))) return "forbidden" as const;
-      return listProjectMessages(projectId);
+      const organizationId = await verifyClientOwnsProject(token, projectId);
+      if (!organizationId) return "forbidden" as const;
+      return listProjectMessages(projectId, organizationId);
     })(),
     8000,
     "portal messages poll"

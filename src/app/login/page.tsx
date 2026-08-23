@@ -20,12 +20,24 @@ export default async function LoginPage({
 
         <form action={loginAction} className="space-y-3">
           <div>
+            <label className="mb-1 block text-xs font-semibold text-[#52514e]">Organization</label>
+            <input
+              type="text"
+              name="organization"
+              placeholder="your-agency-slug"
+              required
+              autoFocus
+              autoCapitalize="off"
+              autoCorrect="off"
+              className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-semibold text-[#52514e]">Password</label>
             <input
               type="password"
               name="password"
               required
-              autoFocus
               className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
             />
           </div>
@@ -35,7 +47,7 @@ export default async function LoginPage({
             </p>
           )}
           {error === "1" && (
-            <p className="text-xs font-medium text-[#d03b3b]">Wrong password. Try again.</p>
+            <p className="text-xs font-medium text-[#d03b3b]">Wrong organization or password. Try again.</p>
           )}
           <button
             type="submit"

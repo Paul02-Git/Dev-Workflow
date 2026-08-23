@@ -13,6 +13,7 @@ import { ProjectsTable } from "@/components/projects-table";
 import { ProjectsPagination } from "@/components/projects-pagination";
 import { ProjectCard } from "@/components/project-card";
 import { STATUS_LABEL } from "@/lib/project-display";
+import { requireAuth } from "@/lib/auth";
 
 const STATUS_ORDER: Record<string, number> = { ACTIVE: 0, ON_HOLD: 1, LAUNCHED: 2, ARCHIVED: 3 };
 const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -94,6 +95,7 @@ export default async function ProjectsPage({
     pageSize?: string;
   }>;
 }) {
+  const { organizationId } = await requireAuth();
   const params = await searchParams;
   const statusFilter = params.status ?? "all";
   const sort = params.sort ?? "created";
@@ -110,9 +112,9 @@ export default async function ProjectsPage({
   ).toString();
 
   const [projects, allTasks, switcherProjects] = await Promise.all([
-    listProjects(),
-    listAllTasks(),
-    listProjectsForSwitcher(),
+    listProjects(organizationId),
+    listAllTasks(organizationId),
+    listProjectsForSwitcher(organizationId),
   ]);
 
   const technologiesByProject = new Map(switcherProjects.map((p) => [p.id, p.technologyNames]));

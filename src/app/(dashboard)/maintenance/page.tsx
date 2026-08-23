@@ -7,6 +7,7 @@ import { MaintenanceToolbar } from "@/components/maintenance-toolbar";
 import { MaintenanceClientCard } from "@/components/maintenance-client-card";
 import { MaintenanceTable } from "@/components/maintenance-table";
 import { MaintenancePagination } from "@/components/maintenance-pagination";
+import { requireAuth } from "@/lib/auth";
 
 type Plan = Awaited<ReturnType<typeof listMaintenancePlans>>[number];
 
@@ -96,6 +97,7 @@ export default async function MaintenancePage({
     pageSize?: string;
   }>;
 }) {
+  const { organizationId } = await requireAuth();
   const params = await searchParams;
   const statusFilter = params.status ?? "all";
   const sort = params.sort ?? "due";
@@ -111,7 +113,7 @@ export default async function MaintenancePage({
     Object.entries(params).filter((entry): entry is [string, string] => typeof entry[1] === "string")
   ).toString();
 
-  const [plans, projects] = await Promise.all([listMaintenancePlans(), listProjects()]);
+  const [plans, projects] = await Promise.all([listMaintenancePlans(organizationId), listProjects(organizationId)]);
 
   const activePlans = plans.filter((p) => p.isActive);
   const duePlans = activePlans.filter(isDue);

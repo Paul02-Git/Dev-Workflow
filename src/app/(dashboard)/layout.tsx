@@ -6,6 +6,7 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
+import { requireAuth } from "@/lib/auth";
 
 // Every page in this group needs live, authenticated, per-request data —
 // there's no meaningful static version of a client's task board. Without
@@ -31,13 +32,15 @@ const NAV = [
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { organizationId } = await requireAuth();
+
   // This runs on every page in the app, so it must never be able to take
   // the whole layout down — timeout-protected, and any failure (timeout or
   // otherwise) falls back to an empty switcher instead of throwing, since
   // a missing dropdown is a much smaller problem than every page crashing.
   let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
   try {
-    switcherProjects = await withTimeout(listProjectsForSwitcher(), 5000, "project switcher");
+    switcherProjects = await withTimeout(listProjectsForSwitcher(organizationId), 5000, "project switcher");
   } catch {
     // swallow — empty switcher is an acceptable degraded state
   }

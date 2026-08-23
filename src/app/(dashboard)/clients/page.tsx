@@ -3,6 +3,7 @@ import { getIntakeToken } from "@/lib/queries/agency-settings";
 import { IntakeLinkPanel } from "@/components/intake-link-panel";
 import { listProjects, listAllTasks, deriveProjectCardSummaries } from "@/lib/queries/projects";
 import { listMaintenancePlans } from "@/lib/queries/maintenance";
+import { requireAuth } from "@/lib/auth";
 import { healthState } from "@/components/project-pulse-cards";
 import { CreateClientForm } from "@/components/create-client-form";
 import { ClientsSection } from "@/components/clients-section";
@@ -24,15 +25,16 @@ export default async function ClientsPage({
 }: {
   searchParams: Promise<{ filter?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const params = await searchParams;
   const activeFilter = params.filter === "new" ? "new" : "all";
 
   const [clients, projects, allTasks, maintenancePlans, intakeToken] = await Promise.all([
-    listClients(),
-    listProjects(),
-    listAllTasks(),
-    listMaintenancePlans(),
-    getIntakeToken(),
+    listClients(organizationId),
+    listProjects(organizationId),
+    listAllTasks(organizationId),
+    listMaintenancePlans(organizationId),
+    getIntakeToken(organizationId),
   ]);
 
   const createdAtByProject = new Map(projects.map((p) => [p.id, p.createdAt]));

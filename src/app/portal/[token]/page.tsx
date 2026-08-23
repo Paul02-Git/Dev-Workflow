@@ -23,7 +23,7 @@ export default async function ClientPortalPage({ params }: { params: Promise<{ t
   const { client, projects } = dashboard;
 
   const projectThreads = await Promise.all(
-    projects.map(async (p) => ({ id: p.id, name: p.name, messages: await listProjectMessages(p.id) }))
+    projects.map(async (p) => ({ id: p.id, name: p.name, messages: await listProjectMessages(p.id, client.organizationId!) }))
   );
 
   return (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listProjectMessages } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
+import { requireAuth } from "@/lib/auth";
 
 /**
  * Plain REST GET for the internal Messages tab's polling — deliberately
@@ -12,10 +13,13 @@ import { withTimeout } from "@/lib/with-timeout";
  * easy-to-debug mechanism for this — visible in the browser's Network tab,
  * no RPC protocol involved. Auth is inherited from src/proxy.ts, which
  * covers every /api/* route by default (only /login, /handoff, /portal,
- * /intake are excluded) — no separate check needed here.
+ * /intake are excluded) for whether the request is authenticated at all —
+ * requireAuth() is still called here directly to get *which* organization,
+ * since multi-tenancy means that's no longer implicit.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { organizationId } = await requireAuth();
   const { id } = await params;
-  const messages = await withTimeout(listProjectMessages(id), 8000, "messages poll");
+  const messages = await withTimeout(listProjectMessages(id, organizationId), 8000, "messages poll");
   return NextResponse.json(messages);
 }
