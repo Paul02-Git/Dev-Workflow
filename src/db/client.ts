@@ -16,18 +16,24 @@ if (!connectionString) {
 // is correct), so caching unconditionally is the standard-recommended
 // pattern here, not just a dev convenience.
 //
-// max: 8, not the original 5 — DATABASE_URL points at Supabase's
-// transaction pooler (port 6543), which has its own connection ceiling
-// shared across every warm instance hitting it. 5 turned out too tight
-// for real usage: a single page load already fans out 4-8 queries via
-// Promise.all (see getProjectDetail's two "waves"), and clicking through
-// nav links quickly fires a fresh full-page render — with its own query
-// burst — on top of whatever the previous, not-yet-finished navigation
-// was still doing (Next.js doesn't cancel a page's in-flight server-side
-// data fetching just because the client navigated away first; confirmed
-// live via a real "destination stream closed early" log line while the
-// query underneath kept running). 8 gives more burst headroom without
-// eating the whole pooler budget alone.
+// max intentionally omitted (2026-08-23) — falls back to postgres.js's own
+// default of 10, one connection higher than the 8 this was explicitly set
+// to before. History: originally 5, raised to 8 because 5 was too tight
+// for real usage (a single page load already fans out 4-8 queries via
+// Promise.all — see getProjectDetail's two "waves" — and clicking through
+// nav links fires a fresh burst on top of whatever the previous,
+// not-yet-finished navigation was still doing). Went back to the library
+// default rather than re-picking a number, since a real "connection
+// genuinely stuck (not just slow) under concurrent load" incident was
+// diagnosed live (getProjectDetail wave 1's own query pending 35s,
+// recovered only by resetDbConnection()'s pool teardown below) and there
+// isn't real evidence either 5 or 8 vs. 10 changes the odds of that
+// specific failure — it's a PgBouncer/Supavisor transaction-pooling
+// hazard under concurrency, not something pool size alone is confirmed to
+// fix. If stuck-connection incidents are frequent enough in practice to
+// investigate a pool-size lever specifically, treat that as a fresh,
+// evidence-driven change — not a return to a number this project already
+// moved away from once.
 //
 // prepare: false — required under transaction-mode pooling: a prepared
 // statement can't safely be reused once pgbouncer might route the next
@@ -53,7 +59,7 @@ const globalForDb = globalThis as unknown as {
 };
 
 function createClient(): DrizzleDb {
-  const client = postgres(connectionString!, { max: 8, prepare: false, idle_timeout: 20 });
+  const client = postgres(connectionString!, { prepare: false, idle_timeout: 20 });
   const drizzleDb = drizzle(client, { schema });
   globalForDb.__pgClient = client;
   globalForDb.__drizzleDb = drizzleDb;
