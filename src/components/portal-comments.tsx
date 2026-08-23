@@ -175,7 +175,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
           liveMessages.map((m) => {
             const isClient = m.authorName === "Client";
             return (
-              <div key={m.id} className={`group flex gap-2 ${isClient ? "flex-row-reverse text-right" : ""}`}>
+              <div key={m.id} className={`group flex gap-2 ${isClient ? "flex-row-reverse" : ""}`}>
                 <span
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: isClient ? "#a259ff" : "#2a78d6" }}
