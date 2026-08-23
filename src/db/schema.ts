@@ -87,6 +87,13 @@ export const organizations = pgTable("organizations", {
   // Folded in from the old agency_settings singleton — this org's
   // reusable "New Client Intake" link.
   intakeToken: text("intake_token").unique(),
+  // True only for Dovera (the platform owner). Unlocks a read-only
+  // cross-organization admin view (/admin) — every other org signs up and
+  // operates exactly as normal, unaware this exists. Checked fresh from
+  // the DB on every admin-scoped request rather than baked into the
+  // session cookie, so revoking it takes effect immediately rather than
+  // waiting for a session to expire.
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

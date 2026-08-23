@@ -7,6 +7,7 @@ import { SidebarNav } from "@/components/sidebar-nav";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
 import { requireAuth } from "@/lib/auth";
+import { isPlatformAdminOrg } from "@/lib/queries/organizations";
 
 // Every page in this group needs live, authenticated, per-request data —
 // there's no meaningful static version of a client's task board. Without
@@ -45,6 +46,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // swallow — empty switcher is an acceptable degraded state
   }
 
+  // Shows the Admin link only for the platform-owner organization — every
+  // /admin page/action re-checks this itself (requirePlatformAdmin), so
+  // this is purely cosmetic, not the actual security boundary.
+  let showAdminNav = false;
+  try {
+    showAdminNav = await withTimeout(isPlatformAdminOrg(organizationId), 5000, "platform admin check");
+  } catch {
+    // swallow — worst case, the nav link is briefly missing, not a security issue
+  }
+  const nav = showAdminNav ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="w-56 shrink-0 border-r border-border bg-card p-4">
@@ -65,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mb-4">
           <ProjectSwitcher projects={switcherProjects} />
         </div>
-        <SidebarNav items={NAV} />
+        <SidebarNav items={nav} />
         <div className="mt-4 border-t border-border pt-3">
           <SearchTrigger />
           <form action={logoutAction}>
