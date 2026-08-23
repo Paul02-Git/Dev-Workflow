@@ -53,7 +53,6 @@ import {
   getMessageOwnership,
   deleteProjectMessage,
   deleteAllProjectMessages,
-  deleteAllProjectActivity,
   getAttachmentProjectId,
 } from "@/lib/queries/projects";
 import {
@@ -681,11 +680,6 @@ export async function deleteProjectMessageAction(formData: FormData) {
 export async function deleteAllProjectMessagesAction(projectId: string) {
   // No revalidatePath — the caller already clears its own local state optimistically.
   await deleteAllProjectMessages(projectId);
-}
-
-/** Internal — wipes a project's entire activity log. No revalidatePath (same reasoning as the chat delete-all actions above) — the caller clears its own local state optimistically. */
-export async function deleteAllProjectActivityAction(projectId: string) {
-  await deleteAllProjectActivity(projectId);
 }
 
 /**

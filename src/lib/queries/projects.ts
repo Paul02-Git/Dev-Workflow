@@ -1262,11 +1262,6 @@ export async function deleteAllProjectMessages(projectId: string) {
   if (paths.length > 0) await deleteStorageObjects(paths);
 }
 
-/** Wipes a project's entire activity log — purely a history/audit trail, no cascading cleanup needed (nothing else references activity_logs rows). */
-export async function deleteAllProjectActivity(projectId: string) {
-  await db.delete(activityLogs).where(eq(activityLogs.projectId, projectId));
-}
-
 export async function getProjectByHandoffToken(token: string) {
   // Project + client in one join, instead of two separate round-trips —
   // this page previously fired 8 sequential/parallel queries per load

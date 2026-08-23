@@ -429,7 +429,7 @@ export default async function ProjectDetailPage({
     </div>
   );
   const notesContent = <NotesTab projectId={project.id} notes={project.notes} />;
-  const activityTabContent = <ActivityTab projectId={project.id} activity={fullActivity} />;
+  const activityTabContent = <ActivityTab activity={fullActivity} />;
   const settingsContent = (
     <SettingsTab
       projectId={project.id}
