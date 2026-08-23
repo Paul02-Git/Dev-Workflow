@@ -1,10 +1,33 @@
+"use client";
+
+import { useState, useTransition } from "react";
 import { formatActivitySentence, relativeTime, activityDateBucket, type ActivityRow } from "@/lib/format-activity";
 import { ActorAvatar } from "@/components/actor-avatar";
+import { deleteAllProjectActivityAction } from "@/lib/actions";
 
 const BUCKET_ORDER = ["Today", "Yesterday", "This week", "Earlier"];
 
-export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
-  if (activity.length === 0) {
+export function ActivityTab({ projectId, activity }: { projectId: string; activity: ActivityRow[] }) {
+  const [liveActivity, setLiveActivity] = useState(activity);
+  const [pending, startTransition] = useTransition();
+
+  // Adjusting state during render (React's documented pattern) rather than
+  // a useEffect when the initial `activity` prop changes.
+  const [prevActivity, setPrevActivity] = useState(activity);
+  if (activity !== prevActivity) {
+    setPrevActivity(activity);
+    setLiveActivity(activity);
+  }
+
+  function handleClearAll() {
+    if (!confirm("Delete this project's entire activity history? This can't be undone.")) return;
+    setLiveActivity([]);
+    startTransition(async () => {
+      await deleteAllProjectActivityAction(projectId);
+    });
+  }
+
+  if (liveActivity.length === 0) {
     return (
       <div className="app-card p-4 text-sm text-muted-foreground">
         No activity recorded yet.
@@ -13,7 +36,7 @@ export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
   }
 
   const byBucket = new Map<string, ActivityRow[]>();
-  for (const row of activity) {
+  for (const row of liveActivity) {
     const bucket = activityDateBucket(row.createdAt);
     if (!byBucket.has(bucket)) byBucket.set(bucket, []);
     byBucket.get(bucket)!.push(row);
@@ -21,6 +44,16 @@ export function ActivityTab({ activity }: { activity: ActivityRow[] }) {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={handleClearAll}
+          className="text-xs font-medium text-muted-foreground hover:text-[#d03b3b] disabled:opacity-50"
+        >
+          {pending ? "Deleting…" : "Delete all"}
+        </button>
+      </div>
       {BUCKET_ORDER.filter((b) => byBucket.has(b)).map((bucket) => (
         <div key={bucket}>
           <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{bucket}</h3>
