@@ -7,6 +7,18 @@ import { SidebarNav } from "@/components/sidebar-nav";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
 
+// Every page in this group needs live, authenticated, per-request data —
+// there's no meaningful static version of a client's task board. Without
+// this, Next tries to statically prerender fixed-path pages (/reports,
+// /dashboard, /clients, /maintenance...) at BUILD time, which means
+// opening real DB connections from the build machine — this is what was
+// actually behind the repeated "Supabase pooler connection limit during
+// static generation" failures seen on local `next build` runs throughout
+// this project's history (previously shrugged off since those builds were
+// never deployed) and the CONNECTION_DESTROYED crash on a real Vercel
+// deploy. force-dynamic on the layout applies to the whole route subtree.
+export const dynamic = "force-dynamic";
+
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
