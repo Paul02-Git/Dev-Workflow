@@ -315,21 +315,46 @@ export async function getProjectDetail(projectId: string) {
   // once the DB moved to the transaction pooler (real, measured: ~2s for
   // this function alone on a mid-size project, dominated by round-trip
   // count, not query cost).
+  // TEMPORARY diagnostic instrumentation (2026-08-23) — tracking down a
+  // production-only "wave 1 timed out after 8000ms" that survived both a
+  // duplicate-polling fix and a Vercel function region change (iad1 ->
+  // hnd1), and never reproduces against the same DB from outside Vercel.
+  // Logs per-query elapsed time (fired via .then, independent of the
+  // withTimeout race) so a real failure tells us WHICH piece is slow
+  // instead of just "something was". Remove once the cause is found.
+  const wave1Start = performance.now();
+  const timed = <T,>(label: string, p: Promise<T>): Promise<T> =>
+    p.then(
+      (r) => {
+        console.log(`[wave1 diag] ${label} resolved at ${(performance.now() - wave1Start).toFixed(0)}ms`);
+        return r;
+      },
+      (e) => {
+        console.log(`[wave1 diag] ${label} REJECTED at ${(performance.now() - wave1Start).toFixed(0)}ms: ${e}`);
+        throw e;
+      }
+    );
   const [projectRows, projectStageRows, taskRows, techRows] = await withTimeout(
     Promise.all([
-      db.select().from(projects).where(eq(projects.id, projectId)),
-      db
-        .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
-        .from(projectStages)
-        .innerJoin(stages, eq(projectStages.stageId, stages.id))
-        .where(eq(projectStages.projectId, projectId))
-        .orderBy(projectStages.sortOrder),
-      db.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(tasks.sortOrder),
-      db
-        .select({ name: technologies.name })
-        .from(projectTechnologies)
-        .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
-        .where(eq(projectTechnologies.projectId, projectId)),
+      timed("project", db.select().from(projects).where(eq(projects.id, projectId))),
+      timed(
+        "stages",
+        db
+          .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
+          .from(projectStages)
+          .innerJoin(stages, eq(projectStages.stageId, stages.id))
+          .where(eq(projectStages.projectId, projectId))
+          .orderBy(projectStages.sortOrder)
+      ),
+      timed("tasks", db.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(tasks.sortOrder)),
+      timed(
+        "technologies",
+        db
+          .select({ name: technologies.name })
+          .from(projectTechnologies)
+          .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
+          .where(eq(projectTechnologies.projectId, projectId))
+      ),
     ]),
     8000,
     "getProjectDetail wave 1"

@@ -212,8 +212,8 @@ export async function resolveAttachmentUrlsAction(
 }
 
 export async function bulkRemoveAttachmentsAction(attachmentIds: string[]) {
-  const projectIds = await bulkRemoveAttachments(attachmentIds);
-  for (const id of projectIds) revalidatePath(`/projects/${id}`);
+  // No revalidatePath — FilesTab already refetches on its own right after this.
+  await bulkRemoveAttachments(attachmentIds);
 }
 
 export async function replaceAttachmentAction(formData: FormData) {
@@ -559,8 +559,15 @@ export async function postClientCommentAction(formData: FormData) {
 
   if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath here: PortalComments already refetches this thread
+  // itself right after this action resolves. Calling revalidatePath on the
+  // page currently rendering this Server Action forces Next to re-render
+  // the WHOLE page inline (including the internal page's own heavy
+  // getProjectDetail queries via the other revalidated path below, when
+  // this had one) as part of this single response — confirmed as the real
+  // cause of repeated "wave 1 timed out" crashes in production, triggered
+  // by ordinary chat use, not page load.
   await postProjectMessage(projectId, CLIENT_ACTOR_NAME, body);
-  revalidatePath(`/portal/${token}/projects/${projectId}`);
 }
 
 export async function uploadClientProjectFileAction(formData: FormData) {
@@ -571,9 +578,8 @@ export async function uploadClientProjectFileAction(formData: FormData) {
 
   if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
   await uploadProjectAttachment(projectId, file, { fromClient: true });
-  revalidatePath(`/portal/${token}/projects/${projectId}`);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /**
@@ -593,9 +599,8 @@ export async function deleteClientFileAction(formData: FormData) {
   if (!attachmentProjectId) return;
   if (!(await verifyClientOwnsProject(token, attachmentProjectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
   await removeTaskAttachment(attachmentId);
-  revalidatePath(`/portal/${token}/projects/${attachmentProjectId}`);
-  revalidatePath(`/projects/${attachmentProjectId}`);
 }
 
 /** Public — uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
@@ -607,10 +612,9 @@ export async function uploadClientChatFileAction(formData: FormData) {
 
   if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
   const message = await postProjectMessage(projectId, CLIENT_ACTOR_NAME, file.name);
   await uploadMessageAttachment(projectId, message.id, file, { fromClient: true });
-  revalidatePath(`/portal/${token}/projects/${projectId}`);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Public — a client may only delete their own messages, never Paul's. */
@@ -623,9 +627,8 @@ export async function deleteClientMessageAction(formData: FormData) {
   if (message.authorName !== CLIENT_ACTOR_NAME) throw new Error("Can't delete this message.");
   if (!(await verifyClientOwnsProject(token, message.projectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
   await deleteProjectMessage(messageId);
-  revalidatePath(`/portal/${token}/projects/${message.projectId}`);
-  revalidatePath(`/projects/${message.projectId}`);
 }
 
 /** Public — wipes the entire thread for this project, both authors' messages. */
@@ -635,9 +638,8 @@ export async function deleteAllClientMessagesAction(formData: FormData) {
 
   if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
 
+  // No revalidatePath — the caller already clears its own local state optimistically.
   await deleteAllProjectMessages(projectId);
-  revalidatePath(`/portal/${token}/projects/${projectId}`);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Internal — Paul's reply from the project page's Messages tab. */
@@ -645,8 +647,14 @@ export async function postProjectMessageAction(formData: FormData) {
   const projectId = String(formData.get("projectId") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!projectId || !body) throw new Error("Message can't be empty");
+  // No revalidatePath: MessagesTab already refetches this thread itself
+  // right after this action resolves. A Server Action invoked from the
+  // page it revalidates forces Next to re-render the WHOLE page inline as
+  // part of THIS response — on this page that means re-running every
+  // heavy query in getProjectDetail on top of sending one chat message,
+  // which was the real, confirmed cause of repeated production timeouts
+  // ("wave 1 timed out") triggered by ordinary chat use, not page load.
   await postProjectMessage(projectId, AGENCY_OWNER_NAME, body);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Internal — uploads a file as its own chat message rather than attaching it to whatever's currently typed. */
@@ -655,9 +663,9 @@ export async function uploadChatFileAction(formData: FormData) {
   const file = formData.get("file");
   if (!projectId || !(file instanceof File)) throw new Error("Missing project or file");
 
+  // No revalidatePath — MessagesTab already polls/refetches on its own.
   const message = await postProjectMessage(projectId, AGENCY_OWNER_NAME, file.name);
   await uploadMessageAttachment(projectId, message.id, file);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Internal — Paul can delete any message, not just his own (he owns the record). */
@@ -665,13 +673,13 @@ export async function deleteProjectMessageAction(formData: FormData) {
   const messageId = String(formData.get("messageId") ?? "");
   const message = await getMessageOwnership(messageId);
   if (!message) return; // Already deleted — nothing to do.
+  // No revalidatePath — MessagesTab already polls/refetches on its own.
   await deleteProjectMessage(messageId);
-  revalidatePath(`/projects/${message.projectId}`);
 }
 
 export async function deleteAllProjectMessagesAction(projectId: string) {
+  // No revalidatePath — the caller already clears its own local state optimistically.
   await deleteAllProjectMessages(projectId);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 /**
@@ -700,8 +708,8 @@ export async function uploadProjectFileAction(formData: FormData) {
     throw new Error("Missing project or file");
   }
 
+  // No revalidatePath — FilesTab already refetches on its own right after this.
   await uploadProjectAttachment(projectId, file);
-  revalidatePath(`/projects/${projectId}`);
 }
 
 export async function updateProjectNotesAction(projectId: string, notes: string) {
