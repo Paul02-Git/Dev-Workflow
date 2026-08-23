@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getClientWorkspaceOverview } from "@/lib/queries/projects";
 import { getClientVisibleFiles, listProjectMessages } from "@/lib/queries/projects";
-import { ProjectTabs } from "@/components/project-tabs";
+import { ClientWorkspaceShell } from "@/components/client-workspace-shell";
 import { PortalComments } from "@/components/portal-comments";
 import { PortalFiles } from "@/components/portal-files";
 import { ClientSettingsTab } from "@/components/client-settings-tab";
@@ -141,25 +141,12 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const settingsContent = <ClientSettingsTab token={token} client={client} />;
 
   return (
-    <div className="min-h-screen bg-background px-4 py-10 text-foreground">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-1 text-lg font-bold">
-          DEV<span className="text-primary">OS</span>
-        </div>
-        <p className="mb-5 text-xs text-muted-foreground">Client workspace</p>
-
-        <ProjectTabs
-          tabs={[
-            { label: "Overview", slug: "overview", content: overviewContent },
-            { label: "Files", slug: "files", badge: totalFiles || undefined, content: filesContent },
-            { label: "Settings", slug: "settings", content: settingsContent },
-          ]}
-        />
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          This link is private to you — only people who have it can view or add to it.
-        </p>
-      </div>
-    </div>
+    <ClientWorkspaceShell
+      tabs={[
+        { label: "Overview", slug: "overview", content: overviewContent },
+        { label: "Files", slug: "files", badge: totalFiles || undefined, content: filesContent },
+        { label: "Settings", slug: "settings", content: settingsContent },
+      ]}
+    />
   );
 }
