@@ -81,7 +81,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
 
   if (!selectedProject) {
     return (
-      <section className="flex h-[600px] flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
+      <section className="flex h-[600px] min-w-0 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
         <h2 className="mb-1 text-sm font-bold">Comments</h2>
         <p className="text-xs text-muted-foreground">You&apos;ll be able to message Paul here once your first project is set up.</p>
       </section>
@@ -146,7 +146,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
   }
 
   return (
-    <section className="flex h-[600px] flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
+    <section className="flex h-[600px] min-w-0 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-bold">Comments</h2>
         {liveMessages.length > 0 && (
