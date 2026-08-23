@@ -58,12 +58,19 @@ export async function requirePlatformAdmin(): Promise<{ organizationId: string }
   return { organizationId };
 }
 
-/** Every organization on the platform, with basic counts — the /admin overview list. Read-only: no client/project/task detail, just enough to see who's using the product. */
+/**
+ * Every OTHER organization on the platform, with basic counts — the
+ * /admin overview list. Excludes platform-admin organizations themselves
+ * (Dovera) — this is oversight of customers using the product, not a
+ * listing that includes the platform owner's own account. Read-only: no
+ * client/project/task detail, just enough to see who's using the product.
+ */
 export async function listAllOrganizationsForAdmin() {
   const [orgs, clientCounts, projectCounts] = await Promise.all([
     db
       .select({ id: organizations.id, name: organizations.name, slug: organizations.slug, createdAt: organizations.createdAt })
       .from(organizations)
+      .where(eq(organizations.isPlatformAdmin, false))
       .orderBy(organizations.createdAt),
     db
       .select({ organizationId: clients.organizationId, count: sql<number>`count(*)` })
@@ -91,11 +98,18 @@ export async function isPlatformAdminOrg(organizationId: string): Promise<boolea
   return !!org?.isPlatformAdmin;
 }
 
-/** One organization's own record, for the /admin drill-down page's header. */
+/**
+ * One organization's own record, for the /admin drill-down page's header.
+ * Returns null for a platform-admin organization (Dovera) even if its id
+ * is navigated to directly — the drill-down is for inspecting customers,
+ * not the platform owner's own account, same exclusion as the overview
+ * list above.
+ */
 export async function getOrganizationById(id: string) {
   const [org] = await db
-    .select({ id: organizations.id, name: organizations.name, slug: organizations.slug, createdAt: organizations.createdAt })
+    .select({ id: organizations.id, name: organizations.name, slug: organizations.slug, createdAt: organizations.createdAt, isPlatformAdmin: organizations.isPlatformAdmin })
     .from(organizations)
     .where(eq(organizations.id, id));
-  return org ?? null;
+  if (!org || org.isPlatformAdmin) return null;
+  return { id: org.id, name: org.name, slug: org.slug, createdAt: org.createdAt };
 }
