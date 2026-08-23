@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { clientLoginAction } from "@/lib/actions";
 
 export default async function ClientLoginPage({
@@ -11,6 +12,7 @@ export default async function ClientLoginPage({
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="app-card w-full max-w-sm rounded-xl border border-border bg-card p-6">
         <div className="mb-2 flex flex-col items-center">
+          <Image src="/logo.png" alt="" width={80} height={80} loading="eager" className="shrink-0 rounded-md" />
           <div className="text-lg font-semibold leading-tight">
             DEV<span className="text-primary">OS</span>
           </div>
