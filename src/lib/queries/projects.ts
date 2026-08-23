@@ -28,6 +28,7 @@ import { CLIENT_ACTION_CANONICAL_KEYS } from "@/data/client-action-keys";
 import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { CLIENT_PORTAL_PHASES } from "@/data/client-portal-phases";
 import { withTimeout } from "@/lib/with-timeout";
+import { getClientByPortalToken } from "@/lib/queries/clients";
 
 export async function listProjects(organizationId: string) {
   const rows = await db
@@ -1378,44 +1379,15 @@ export async function getClientVisibleFiles(projectId: string) {
 }
 
 /**
- * Client Portal drill-down — resolves the client from their *client-level*
- * portalToken (not a project-level token), then verifies the requested
- * project actually belongs to that client before returning anything. This
- * ownership check is the one thing standing between a client and being
- * able to view another client's project by guessing a projectId in the
- * URL — never skip it.
+ * Collapses a project's up-to-18 internal stages into the 5 client-facing
+ * phases from CLIENT_PORTAL_PHASES (Access & Credentials, Integrations,
+ * Security, Handoff, etc. are more detail than a client needs). A phase
+ * only shows if the project actually has at least one task in it. Shared by
+ * getClientProjectPortalDetail (single-project drill-down) and
+ * getClientWorkspaceOverview (the Client Workspace's per-project summary
+ * cards) so the two can never disagree about what "current stage" means.
  */
-export async function getClientProjectPortalDetail(portalToken: string, projectId: string) {
-  const [row] = await db
-    .select({ project: projects, clientId: clients.id, clientName: clients.name })
-    .from(clients)
-    .innerJoin(projects, eq(projects.clientId, clients.id))
-    .where(and(eq(clients.portalToken, portalToken), eq(projects.id, projectId)));
-  if (!row) return null;
-  const { project, clientName } = row;
-
-  const [detail, stageRows, clientFiles, messages] = await Promise.all([
-    getProjectClientSafeDetail(project.id),
-    db
-      .select({
-        stageKey: stages.key,
-        stageSortOrder: stages.sortOrder,
-        taskStatus: tasks.status,
-      })
-      .from(projectStages)
-      .innerJoin(stages, eq(projectStages.stageId, stages.id))
-      .leftJoin(tasks, and(eq(tasks.stageId, stages.id), eq(tasks.projectId, project.id), isNull(tasks.parentTaskId)))
-      .where(eq(projectStages.projectId, project.id)),
-    getClientVisibleFiles(project.id),
-    listProjectMessages(project.id, project.organizationId!),
-  ]);
-
-  // One row per stage/task combination above — collapse into per-(real)-
-  // stage done/total first, then further collapse the up-to-18 internal
-  // stages into the 5 client-facing phases from CLIENT_PORTAL_PHASES (the
-  // internal app's own granularity — Access & Credentials, Integrations,
-  // Security, Handoff, etc. — is more detail than a client needs). A phase
-  // only shows if the project actually has at least one task in it.
+function summarizeClientPhases(stageRows: { stageKey: string; taskStatus: string | null }[]) {
   const stageMap = new Map<string, { done: number; total: number }>();
   for (const r of stageRows) {
     const entry = stageMap.get(r.stageKey) ?? { done: 0, total: 0 };
@@ -1439,20 +1411,158 @@ export async function getClientProjectPortalDetail(portalToken: string, projectI
   }).filter((p) => p.total > 0);
   const currentStageIndex = orderedStages.findIndex((s) => s.done < s.total);
 
+  const stagesOut = orderedStages.map((s, i) => ({
+    name: s.name,
+    done: s.done,
+    total: s.total,
+    isCurrent: i === currentStageIndex,
+    isDone: currentStageIndex === -1 ? true : i < currentStageIndex,
+  }));
+  const totalDone = orderedStages.reduce((sum, s) => sum + s.done, 0);
+  const totalTasks = orderedStages.reduce((sum, s) => sum + s.total, 0);
+  const percent = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+  const currentStageName = currentStageIndex === -1 ? null : orderedStages[currentStageIndex].name;
+
+  return { stages: stagesOut, percent, currentStageName };
+}
+
+async function getClientPhaseStageRows(projectId: string) {
+  return db
+    .select({
+      stageKey: stages.key,
+      stageSortOrder: stages.sortOrder,
+      taskStatus: tasks.status,
+    })
+    .from(projectStages)
+    .innerJoin(stages, eq(projectStages.stageId, stages.id))
+    .leftJoin(tasks, and(eq(tasks.stageId, stages.id), eq(tasks.projectId, projectId), isNull(tasks.parentTaskId)))
+    .where(eq(projectStages.projectId, projectId));
+}
+
+/**
+ * Client Portal drill-down — resolves the client from their *client-level*
+ * portalToken (not a project-level token), then verifies the requested
+ * project actually belongs to that client before returning anything. This
+ * ownership check is the one thing standing between a client and being
+ * able to view another client's project by guessing a projectId in the
+ * URL — never skip it.
+ */
+export async function getClientProjectPortalDetail(portalToken: string, projectId: string) {
+  const [row] = await db
+    .select({ project: projects, clientId: clients.id, clientName: clients.name })
+    .from(clients)
+    .innerJoin(projects, eq(projects.clientId, clients.id))
+    .where(and(eq(clients.portalToken, portalToken), eq(projects.id, projectId)));
+  if (!row) return null;
+  const { project, clientName } = row;
+
+  const [detail, stageRows, clientFiles, messages] = await Promise.all([
+    getProjectClientSafeDetail(project.id),
+    getClientPhaseStageRows(project.id),
+    getClientVisibleFiles(project.id),
+    listProjectMessages(project.id, project.organizationId!),
+  ]);
+
+  const { stages: orderedStages } = summarizeClientPhases(stageRows);
+
   return {
     project,
     clientName: clientName ?? "",
     ...detail,
-    stages: orderedStages.map((s, i) => ({
-      name: s.name,
-      done: s.done,
-      total: s.total,
-      isCurrent: i === currentStageIndex,
-      isDone: currentStageIndex === -1 ? true : i < currentStageIndex,
-    })),
+    stages: orderedStages,
     clientFiles,
     messages,
   };
+}
+
+/**
+ * The Client Workspace's Overview tab — one summary per active project for
+ * a client who may have several. Deliberately avoids activity_logs as the
+ * "recent updates" source (it carries internal-ops entries like "generated
+ * the handoff link" that a client shouldn't see); "recently completed" and
+ * "next up" are derived straight from real task state instead, which is
+ * inherently client-appropriate.
+ */
+export async function getClientWorkspaceOverview(token: string) {
+  const client = await getClientByPortalToken(token);
+  if (!client) return null;
+
+  const clientProjects = await db.select().from(projects).where(eq(projects.clientId, client.id));
+
+  const projectSummaries = await Promise.all(
+    clientProjects.map(async (project) => {
+      const [topLevel, stageRows] = await Promise.all([
+        db
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            status: tasks.status,
+            canonicalKey: tasks.canonicalKey,
+            completedAt: tasks.completedAt,
+          })
+          .from(tasks)
+          .where(and(eq(tasks.projectId, project.id), isNull(tasks.parentTaskId))),
+        getClientPhaseStageRows(project.id),
+      ]);
+
+      const { percent, currentStageName } = summarizeClientPhases(stageRows);
+
+      const recentlyCompleted = topLevel
+        .filter((t) => t.status === "DONE" && t.completedAt)
+        .sort((a, b) => +new Date(b.completedAt!) - +new Date(a.completedAt!))
+        .slice(0, 2)
+        .map((t) => t.title);
+
+      const nextUp = topLevel.find((t) => t.status !== "DONE" && t.status !== "SKIPPED")?.title ?? null;
+
+      const clientActions = topLevel
+        .filter((t) => CLIENT_ACTION_CANONICAL_KEYS.has(t.canonicalKey ?? "") && t.status !== "DONE")
+        .map((t) => ({ id: t.id, title: t.title }));
+
+      return { project, percent, currentStageName, recentlyCompleted, nextUp, clientActions };
+    })
+  );
+
+  return { client, projectSummaries };
+}
+
+/**
+ * Client-triggered "Review → Done" action from the Client Workspace's
+ * "Your Action" callout. Only allows marking a task done if it belongs to
+ * the given project AND its canonicalKey is a real client action
+ * (CLIENT_ACTION_CANONICAL_KEYS) — a crafted request with an arbitrary
+ * taskId can't mark unrelated dev/QA work done. actorName is stamped
+ * "Client" directly rather than via updateTaskStatus (which always
+ * attributes to the agency owner) — same reasoning as handoff_viewed being
+ * the one other genuinely client-triggered write.
+ */
+export async function markClientActionTaskDone(taskId: string, projectId: string, organizationId: string) {
+  const [task] = await db
+    .select({ id: tasks.id, canonicalKey: tasks.canonicalKey })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId), eq(tasks.organizationId, organizationId)));
+  if (!task || !CLIENT_ACTION_CANONICAL_KEYS.has(task.canonicalKey ?? "")) {
+    throw new Error("This action can't be completed here.");
+  }
+
+  await db
+    .update(tasks)
+    .set({ status: "DONE", completedAt: new Date(), updatedAt: new Date(), isWaitingOnClient: false, waitingOnClientSince: null })
+    .where(eq(tasks.id, taskId));
+
+  await db.insert(activityLogs).values({
+    organizationId,
+    projectId,
+    taskId,
+    action: "task_status_changed",
+    detail: "DONE",
+    actorName: CLIENT_ACTOR_NAME,
+  });
+
+  const detail = await getProjectDetail(projectId, organizationId);
+  if (detail) {
+    await db.update(projects).set({ healthScore: detail.healthScore, updatedAt: new Date() }).where(eq(projects.id, projectId));
+  }
 }
 
 // ---------------------------------------------------------------------------

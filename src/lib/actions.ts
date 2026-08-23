@@ -54,6 +54,7 @@ import {
   deleteProjectMessage,
   deleteAllProjectMessages,
   getAttachmentProjectId,
+  markClientActionTaskDone,
 } from "@/lib/queries/projects";
 import {
   uploadTaskAttachment,
@@ -610,6 +611,25 @@ export async function postClientCommentAction(formData: FormData) {
   // cause of repeated "wave 1 timed out" crashes in production, triggered
   // by ordinary chat use, not page load.
   await postProjectMessage(projectId, orgId, CLIENT_ACTOR_NAME, body);
+}
+
+/**
+ * Public — the Client Workspace's "Review" button. Re-verifies ownership
+ * via the token (never trusts projectId/taskId from the form alone) and
+ * markClientActionTaskDone() itself re-checks the task is a real client
+ * action before writing, so a crafted request can't mark arbitrary work
+ * done through this path.
+ */
+export async function markClientActionDoneAction(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const taskId = String(formData.get("taskId") ?? "");
+
+  const orgId = await verifyClientOwnsProject(token, projectId);
+  if (!orgId) throw new Error("This link is no longer valid for that project.");
+
+  await markClientActionTaskDone(taskId, projectId, orgId);
+  revalidatePath(`/portal/${token}`);
 }
 
 export async function uploadClientProjectFileAction(formData: FormData) {
