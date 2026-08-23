@@ -182,8 +182,8 @@ export function PortalComments({ token, projects }: { token: string; projects: P
                 >
                   {m.authorName.charAt(0).toUpperCase()}
                 </span>
-                <div className="max-w-[78%]">
-                  <div className={`mb-0.5 flex items-baseline gap-1.5 text-[11px] text-muted-foreground ${isClient ? "flex-row-reverse" : ""}`}>
+                <div className={`flex min-w-0 max-w-[78%] flex-col gap-0.5 ${isClient ? "items-end" : "items-start"}`}>
+                  <div className={`flex items-baseline gap-1.5 text-[11px] text-muted-foreground ${isClient ? "flex-row-reverse" : ""}`}>
                     <span className="font-semibold text-[#52514e]">{m.authorName}</span>
                     <span>{formatTime(m.createdAt)}</span>
                   </div>
@@ -192,14 +192,14 @@ export function PortalComments({ token, projects }: { token: string; projects: P
                       href={m.attachment.url ?? undefined}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs hover:border-primary ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}
+                      className={`flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs hover:border-primary ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}
                     >
                       <FileIcon className="size-4 shrink-0 text-muted-foreground" />
                       <span className="truncate font-medium">{m.attachment.label ?? "File"}</span>
                       <span className="shrink-0 text-muted-foreground">{formatFileSize(m.attachment.fileSize)}</span>
                     </a>
                   ) : (
-                    <div className={`rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
+                    <div className={`max-w-full rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
                       {m.body}
                     </div>
                   )}
