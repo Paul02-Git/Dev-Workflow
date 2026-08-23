@@ -471,7 +471,6 @@ export default async function ProjectDetailPage({
               label: "Client Activity",
               slug: "client-activity",
               badge: projectFiles.length + messages.length || undefined,
-              notifyUrl: [`/api/projects/${project.id}/files`, `/api/projects/${project.id}/messages`],
               content: clientActivityContent,
             },
             { label: "Notes", slug: "notes", content: notesContent },
