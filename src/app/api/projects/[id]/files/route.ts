@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listProjectAttachmentsWithUrls } from "@/lib/queries/projects";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Plain REST GET for the Files tab's polling — same reasoning as
@@ -12,6 +13,6 @@ import { listProjectAttachmentsWithUrls } from "@/lib/queries/projects";
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const files = await listProjectAttachmentsWithUrls(id);
+  const files = await withTimeout(listProjectAttachmentsWithUrls(id), 8000, "files poll");
   return NextResponse.json(files);
 }

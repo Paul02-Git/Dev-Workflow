@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listProjectMessages } from "@/lib/queries/projects";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Plain REST GET for the internal Messages tab's polling — deliberately
@@ -15,6 +16,6 @@ import { listProjectMessages } from "@/lib/queries/projects";
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const messages = await listProjectMessages(id);
+  const messages = await withTimeout(listProjectMessages(id), 8000, "messages poll");
   return NextResponse.json(messages);
 }

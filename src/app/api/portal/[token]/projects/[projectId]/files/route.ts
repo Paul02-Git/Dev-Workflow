@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyClientOwnsProject } from "@/lib/queries/clients";
 import { getClientVisibleFiles } from "@/lib/queries/projects";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Plain REST GET for the public Client Portal's Files polling — same
@@ -13,9 +14,14 @@ export async function GET(
   { params }: { params: Promise<{ token: string; projectId: string }> }
 ) {
   const { token, projectId } = await params;
-  if (!(await verifyClientOwnsProject(token, projectId))) {
-    return NextResponse.json([], { status: 403 });
-  }
-  const files = await getClientVisibleFiles(projectId);
+  const files = await withTimeout(
+    (async () => {
+      if (!(await verifyClientOwnsProject(token, projectId))) return "forbidden" as const;
+      return getClientVisibleFiles(projectId);
+    })(),
+    8000,
+    "portal files poll"
+  );
+  if (files === "forbidden") return NextResponse.json([], { status: 403 });
   return NextResponse.json(files);
 }

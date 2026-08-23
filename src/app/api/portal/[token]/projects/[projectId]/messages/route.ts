@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyClientOwnsProject } from "@/lib/queries/clients";
 import { listProjectMessages } from "@/lib/queries/projects";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Plain REST GET for the public Client Portal's Comments polling — same
@@ -15,9 +16,14 @@ export async function GET(
   { params }: { params: Promise<{ token: string; projectId: string }> }
 ) {
   const { token, projectId } = await params;
-  if (!(await verifyClientOwnsProject(token, projectId))) {
-    return NextResponse.json([], { status: 403 });
-  }
-  const messages = await listProjectMessages(projectId);
+  const messages = await withTimeout(
+    (async () => {
+      if (!(await verifyClientOwnsProject(token, projectId))) return "forbidden" as const;
+      return listProjectMessages(projectId);
+    })(),
+    8000,
+    "portal messages poll"
+  );
+  if (messages === "forbidden") return NextResponse.json([], { status: 403 });
   return NextResponse.json(messages);
 }
