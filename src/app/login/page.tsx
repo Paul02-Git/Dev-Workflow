@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { loginAction } from "@/lib/auth-actions";
 
 export default async function LoginPage({
@@ -56,6 +57,13 @@ export default async function LoginPage({
             Sign in
           </button>
         </form>
+
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          New agency?{" "}
+          <Link href="/signup" className="font-semibold text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
       </div>
     </div>
   );

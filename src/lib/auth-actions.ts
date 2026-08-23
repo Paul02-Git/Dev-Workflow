@@ -12,6 +12,7 @@ import {
   checkLoginRateLimit,
   recordLoginAttempt,
 } from "@/lib/auth";
+import { createOrganization, normalizeSlug } from "@/lib/queries/organizations";
 
 export async function loginAction(formData: FormData) {
   const slug = String(formData.get("organization") ?? "").trim().toLowerCase();
@@ -43,6 +44,45 @@ export async function loginAction(formData: FormData) {
 
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, makeSessionCookieValue(verified.id), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+
+  redirect("/dashboard");
+}
+
+/**
+ * Onboards a brand-new organization (agency) — everyone except Dovera,
+ * which was migrated in directly. Starts completely empty (no clients/
+ * projects), same shape any org would have right after this. Auto-logs
+ * the new org in immediately, same as a successful loginAction, rather
+ * than sending them to /login to type the password they just chose.
+ */
+export async function signupAction(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  const slugInput = String(formData.get("slug") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
+
+  if (!name) redirect("/signup?error=invalid");
+
+  const slug = normalizeSlug(slugInput);
+  if (!slug) redirect("/signup?error=invalid");
+  if (password.length < 8) redirect("/signup?error=short_password");
+  if (password !== passwordConfirm) redirect("/signup?error=mismatch");
+
+  let org;
+  try {
+    org = await createOrganization({ name, slug, password });
+  } catch {
+    redirect(`/signup?error=slug_taken&name=${encodeURIComponent(name)}`);
+  }
+
+  const store = await cookies();
+  store.set(SESSION_COOKIE_NAME, makeSessionCookieValue(org.id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
