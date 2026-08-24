@@ -15,6 +15,7 @@ import {
 import { listAccessItems } from "@/lib/queries/access-items";
 import { listDueMaintenancePlans } from "@/lib/queries/maintenance";
 import { withTimeout } from "@/lib/with-timeout";
+import { requireAuth } from "@/lib/auth";
 import { GenerateMaintenanceButton } from "@/components/generate-maintenance-button";
 import { SearchTrigger } from "@/components/search-trigger";
 import { DashboardStatRow } from "@/components/dashboard-stat-row";
@@ -40,6 +41,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ panel?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const { panel } = await searchParams;
 
   // Timeout-protected and fault-tolerant on its own, separate from the
@@ -47,17 +49,17 @@ export default async function DashboardPage({
   // shouldn't take down the rest of the dashboard's real data.
   let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
   try {
-    switcherProjects = await withTimeout(listProjectsForSwitcher(), 5000, "project switcher");
+    switcherProjects = await withTimeout(listProjectsForSwitcher(organizationId), 5000, "project switcher");
   } catch {
     // swallow — empty switcher is an acceptable degraded state
   }
 
   const [projects, allTasks, activity, duePlans] = await withTimeout(
     Promise.all([
-      listProjects(),
-      listAllTasks(),
-      listRecentActivityAcrossProjects(16),
-      listDueMaintenancePlans(),
+      listProjects(organizationId),
+      listAllTasks(organizationId),
+      listRecentActivityAcrossProjects(organizationId, 16),
+      listDueMaintenancePlans(organizationId),
     ]),
     8000,
     "dashboard top queries"
@@ -99,7 +101,7 @@ export default async function DashboardPage({
 
   const [featuredDetail, featuredAccessItems] = featuredProjectId
     ? await withTimeout(
-        Promise.all([getProjectDetail(featuredProjectId), listAccessItems(featuredProjectId)]),
+        Promise.all([getProjectDetail(featuredProjectId, organizationId), listAccessItems(featuredProjectId, organizationId)]),
         8000,
         "dashboard featured panel"
       )

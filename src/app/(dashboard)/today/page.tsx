@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listAllTasks } from "@/lib/queries/projects";
+import { requireAuth } from "@/lib/auth";
 
 function startOfToday() {
   const d = new Date();
@@ -14,7 +15,8 @@ function endOfToday() {
 }
 
 export default async function TodayPage() {
-  const allTasks = await listAllTasks();
+  const { organizationId } = await requireAuth();
+  const allTasks = await listAllTasks(organizationId);
   const notDone = allTasks.filter((t) => !t.parentTaskId && t.effectiveStatus !== "DONE" && t.effectiveStatus !== "SKIPPED");
 
   const todayStart = startOfToday();

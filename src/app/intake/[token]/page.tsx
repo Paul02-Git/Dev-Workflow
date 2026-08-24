@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
-import { isValidIntakeToken } from "@/lib/queries/agency-settings";
+import { resolveIntakeToken } from "@/lib/queries/agency-settings";
 import { submitIntakeAction } from "@/lib/actions";
 import { TECHNOLOGIES } from "@/data/technologies";
 import { PROJECT_TYPES } from "@/data/project-types";
 
 export default async function IntakePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  if (!(await isValidIntakeToken(token))) notFound();
+  if (!(await resolveIntakeToken(token))) notFound();
 
   return (
     <div className="min-h-screen bg-background px-4 py-12 text-foreground">

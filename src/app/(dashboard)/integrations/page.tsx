@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { listTechnologyUsage } from "@/lib/queries/projects";
+import { requireAuth } from "@/lib/auth";
 
 export default async function IntegrationsPage() {
-  const usage = await listTechnologyUsage();
+  const { organizationId } = await requireAuth();
+  const usage = await listTechnologyUsage(organizationId);
   const byCategory = new Map<string, typeof usage>();
   for (const t of usage) {
     if (!byCategory.has(t.category)) byCategory.set(t.category, []);

@@ -3,14 +3,16 @@ import { createProjectAction } from "@/lib/actions";
 import { TECHNOLOGIES } from "@/data/technologies";
 import { PROJECT_TYPES } from "@/data/project-types";
 import { ClientPicker } from "@/components/client-picker";
+import { requireAuth } from "@/lib/auth";
 
 export default async function NewProjectPage({
   searchParams,
 }: {
   searchParams: Promise<{ clientId?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const { clientId } = await searchParams;
-  const clients = await listClients();
+  const clients = await listClients(organizationId);
 
   return (
     <div className="max-w-2xl">

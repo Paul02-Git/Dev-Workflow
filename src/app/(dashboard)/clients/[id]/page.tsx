@@ -15,6 +15,7 @@ import { ClientPortalLinkPanel } from "@/components/client-portal-link-panel";
 import { deleteClientAction } from "@/lib/actions";
 import { hashPick } from "@/lib/hash-color";
 import { PROJECT_COLOR_PALETTE } from "@/lib/project-display";
+import { requireAuth } from "@/lib/auth";
 
 function daysToLaunch(targetLaunchDate: Date | string | null): number | null {
   if (!targetLaunchDate) return null;
@@ -24,11 +25,12 @@ function daysToLaunch(targetLaunchDate: Date | string | null): number | null {
 }
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { organizationId } = await requireAuth();
   const { id } = await params;
-  const client = await getClient(id);
+  const client = await getClient(id, organizationId);
   if (!client) notFound();
 
-  const [allTasks, switcherProjects] = await Promise.all([listAllTasks(), listProjectsForSwitcher()]);
+  const [allTasks, switcherProjects] = await Promise.all([listAllTasks(organizationId), listProjectsForSwitcher(organizationId)]);
 
   const technologiesByProject = new Map(switcherProjects.map((p) => [p.id, p.technologyNames]));
   const createdAtByProject = new Map(client.projects.map((p) => [p.id, p.createdAt]));
@@ -64,8 +66,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const showCompany = client.company && client.company.trim().toLowerCase() !== client.name.trim().toLowerCase();
 
   const [fileLists, messageLists] = await Promise.all([
-    Promise.all(client.projects.map((p) => listProjectAttachments(p.id))),
-    Promise.all(client.projects.map((p) => listProjectMessages(p.id))),
+    Promise.all(client.projects.map((p) => listProjectAttachments(p.id, organizationId))),
+    Promise.all(client.projects.map((p) => listProjectMessages(p.id, organizationId))),
   ]);
   const clientFileCount = fileLists.reduce((sum, files) => sum + files.filter((f) => f.uploadedByClient).length, 0);
   const clientMessageCount = messageLists.reduce((sum, msgs) => sum + msgs.length, 0);
@@ -127,7 +129,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       <div className="mb-6">
         <ClientPortalLinkPanel
           clientId={client.id}
-          token={client.portalToken}
+          inviteToken={client.inviteToken}
+          hasPassword={!!client.passwordHash}
+          loginSlug={client.loginSlug}
           fileCount={clientFileCount}
           messageCount={clientMessageCount}
         />

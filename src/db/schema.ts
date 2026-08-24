@@ -55,30 +55,76 @@ export const projectStatusEnum = pgEnum("project_status", [
 ]);
 
 // ---------------------------------------------------------------------------
+// Organizations (tenants) — one per agency using this app. Added to
+// convert DEVOS from a single-agency internal tool into a real
+// multi-tenant product. One shared password per organization for now (not
+// per-staff-member accounts) — same login shape as the old single
+// APP_PASSWORD, just one gate per agency instead of one gate for the
+// whole app. Folds in what used to be the single-row `agency_settings`
+// singleton (intakeToken) now that there's a real per-tenant row to hang
+// it on instead.
+//
+// organizationId columns added below to every tenant-data table are
+// NULLABLE for now — this is the "expand" half of an expand/contract
+// migration: the currently-deployed app doesn't know about this column
+// and must keep working unmodified against the same live database while
+// this migration is built out. They only become NOT NULL once every
+// query in the app has been updated to always set them (the "contract"
+// step), which must not happen before the new code is deployed.
+// ---------------------------------------------------------------------------
+
+export const organizations = pgTable("organizations", {
+  id: cuid(),
+  name: text("name").notNull(),
+  // URL-safe, used at login (e.g. "dovera") instead of a subdomain —
+  // simplest version of per-tenant identification for now.
+  slug: text("slug").notNull().unique(),
+  // scrypt hash (see src/lib/auth.ts) — never the plaintext password.
+  // Replaces the single shared APP_PASSWORD env var now that many
+  // different agencies' passwords need to live somewhere other than one
+  // env var each.
+  passwordHash: text("password_hash").notNull(),
+  // Folded in from the old agency_settings singleton — this org's
+  // reusable "New Client Intake" link.
+  intakeToken: text("intake_token").unique(),
+  // True only for Dovera (the platform owner). Unlocks a read-only
+  // cross-organization admin view (/admin) — every other org signs up and
+  // operates exactly as normal, unaware this exists. Checked fresh from
+  // the DB on every admin-scoped request rather than baked into the
+  // session cookie, so revoking it takes effect immediately rather than
+  // waiting for a session to expire.
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Core: clients, projects, technologies
 // ---------------------------------------------------------------------------
 
 export const clients = pgTable("clients", {
   id: cuid(),
+  // Nullable until the contract step — see the organizations block above.
+  organizationId: text("organization_id").references(() => organizations.id),
   name: text("name").notNull(),
   company: text("company"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   address: text("address"),
   notes: text("notes"),
-  // Client Portal — a persistent, unguessable link (same pattern as
-  // projects.handoffToken, one level up) giving the client themselves
-  // access to a dashboard of all their projects, no login required.
-  //
-  // DB column is actually named "invite_token", not "portal_token": a
-  // parallel session (branch `worktree-multi-tenant`, see .claude/worktrees)
-  // renamed it live against this same production database as part of an
-  // unrelated, undeployed multi-tenant rework — this mapping was updated to
-  // match reality rather than renaming the column back, since 3 real
-  // clients already have data under the new client-invite/password flow
-  // that branch also shipped. See PROJECT_STATUS.md for the full incident
-  // writeup before touching this table again.
-  portalToken: text("invite_token").unique(),
+  // One-time setup/reset link (same random-token shape the old, now-retired
+  // portalToken used) — visiting it lets the client set (or reset)
+  // loginSlug/passwordHash below via the /client-invite/[token] page.
+  // Unlike the old portalToken, this does NOT grant ongoing access by
+  // itself once a password exists; it's the invite/reset mechanism only.
+  inviteToken: text("invite_token").unique(),
+  // Real client login — a client authenticates with loginSlug + password
+  // (same scrypt-hash + HMAC-signed-session shape as organizations' own
+  // login, see src/lib/auth.ts), not a bearer token in a URL. loginSlug is
+  // globally unique (like organizations.slug) so a client can log in
+  // without needing to also know which organization they belong to.
+  // Both null until the client actually completes the invite flow.
+  loginSlug: text("login_slug").unique(),
+  passwordHash: text("password_hash"),
   // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the
   // public intake form) — lets Paul spot self-service signups at a glance
   // without needing an activity_logs entry, which requires a projectId
@@ -92,6 +138,7 @@ export const projects = pgTable(
   "projects",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     clientId: text("client_id")
       .notNull()
       .references(() => clients.id),
@@ -128,6 +175,7 @@ export const technologies = pgTable("technologies", {
 export const projectTechnologies = pgTable(
   "project_technologies",
   {
+    organizationId: text("organization_id").references(() => organizations.id),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -153,6 +201,7 @@ export const projectStages = pgTable(
   "project_stages",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -172,6 +221,7 @@ export const tasks = pgTable(
   "tasks",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -214,6 +264,7 @@ export const taskDependencies = pgTable(
   "task_dependencies",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
@@ -228,12 +279,20 @@ export const taskDependencies = pgTable(
 
 export const tags = pgTable("tags", {
   id: cuid(),
+  organizationId: text("organization_id").references(() => organizations.id),
+  // TODO (contract step): this unique constraint is global today, meaning
+  // two different organizations can't both have a tag named e.g. "urgent"
+  // once organizationId is enforced — should become a composite unique
+  // index on (organizationId, name) once organizationId goes NOT NULL.
+  // Left as a plain global unique for now since there's only one
+  // organization's data in this table until the migration completes.
   name: text("name").notNull().unique(),
 });
 
 export const taskTags = pgTable(
   "task_tags",
   {
+    organizationId: text("organization_id").references(() => organizations.id),
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
@@ -248,6 +307,7 @@ export const attachments = pgTable(
   "attachments",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     // Exactly one of taskId / projectId is set: taskId for proof attached to
     // a specific task (the original use), projectId for a general project
     // file that isn't tied to any one step (a client's logo, a brand guide) —
@@ -287,6 +347,7 @@ export const attachments = pgTable(
 
 export const accessItems = pgTable("access_items", {
   id: cuid(),
+  organizationId: text("organization_id").references(() => organizations.id),
   projectId: text("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
@@ -315,6 +376,22 @@ export const accessItems = pgTable("access_items", {
 // runs on a serverless platform (Vercel), which defeats the point.
 export const loginAttempts = pgTable("login_attempts", {
   id: cuid(),
+  // Which organization's password was attempted — known at attempt time
+  // regardless of success/failure, since the login form now identifies the
+  // org before checking the password. Nullable until the contract step;
+  // also nullable permanently for an attempt against an org slug that
+  // doesn't exist at all (can't reference an org that was never found).
+  organizationId: text("organization_id").references(() => organizations.id),
+  // Which client's password was attempted — mutually exclusive with
+  // organizationId (an attempt is against exactly one login surface, agency
+  // or client, never both). Same reasoning as organizationId above: known
+  // at attempt time once the login form identifies which client, nullable
+  // for an attempt against a loginSlug that doesn't exist at all.
+  // onDelete: "set null" (unlike organizationId above, which has no
+  // cascade — organizations are never deleted) because deleteClient() is a
+  // real, used feature: without this, deleting any client that ever had a
+  // login attempt recorded would fail with a foreign-key violation.
+  clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
   success: boolean("success").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -327,6 +404,7 @@ export const loginAttempts = pgTable("login_attempts", {
 // dashboard that Paul triggers by hand.
 export const maintenancePlans = pgTable("maintenance_plans", {
   id: cuid(),
+  organizationId: text("organization_id").references(() => organizations.id),
   projectId: text("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
@@ -351,6 +429,7 @@ export const activityLogs = pgTable(
   "activity_logs",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -377,6 +456,7 @@ export const projectMessages = pgTable(
   "project_messages",
   {
     id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -386,15 +466,6 @@ export const projectMessages = pgTable(
   },
   (t) => [index("project_message_project_idx").on(t.projectId)]
 );
-
-// A single settings row, not scoped to any client/project — currently just
-// holds the one reusable "New Client Intake" link. First agency-wide
-// setting this app has needed; add more columns here rather than a new
-// table if others come up later.
-export const agencySettings = pgTable("agency_settings", {
-  id: text("id").primaryKey().default("singleton"),
-  intakeToken: text("intake_token").unique(),
-});
 
 // ---------------------------------------------------------------------------
 // Templates (authored content the workflow engine draws from)
@@ -475,7 +546,12 @@ export const templateTaskDependencies = pgTable(
 // Relations (for Drizzle's relational query API)
 // ---------------------------------------------------------------------------
 
-export const clientsRelations = relations(clients, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  clients: many(clients),
+}));
+
+export const clientsRelations = relations(clients, ({ one, many }) => ({
+  organization: one(organizations, { fields: [clients.organizationId], references: [organizations.id] }),
   projects: many(projects),
 }));
 

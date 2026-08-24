@@ -29,7 +29,7 @@ import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { CLIENT_PORTAL_PHASES } from "@/data/client-portal-phases";
 import { withTimeout } from "@/lib/with-timeout";
 
-export async function listProjects() {
+export async function listProjects(organizationId: string) {
   const rows = await db
     .select({
       id: projects.id,
@@ -47,6 +47,7 @@ export async function listProjects() {
     })
     .from(projects)
     .innerJoin(clients, eq(projects.clientId, clients.id))
+    .where(eq(projects.organizationId, organizationId))
     .orderBy(desc(projects.createdAt));
   return rows;
 }
@@ -64,7 +65,7 @@ export async function listProjects() {
 // dedupes calls within a single request's render, never persists across
 // requests, so it can never serve stale data — a fresh request always
 // runs the real query at least once.
-export const listProjectsForSwitcher = cache(async () => {
+export const listProjectsForSwitcher = cache(async (organizationId: string) => {
   const [projectRows, techRows] = await Promise.all([
     db
       .select({
@@ -75,6 +76,7 @@ export const listProjectsForSwitcher = cache(async () => {
       })
       .from(projects)
       .innerJoin(clients, eq(projects.clientId, clients.id))
+      .where(eq(projects.organizationId, organizationId))
       .orderBy(desc(projects.createdAt)),
     db
       .select({
@@ -82,7 +84,8 @@ export const listProjectsForSwitcher = cache(async () => {
         technologyName: technologies.name,
       })
       .from(projectTechnologies)
-      .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id)),
+      .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
+      .where(eq(projectTechnologies.organizationId, organizationId)),
   ]);
 
   const techNamesByProject = new Map<string, string[]>();
@@ -100,8 +103,8 @@ export const listProjectsForSwitcher = cache(async () => {
  * task_dependencies/tags/attachments transitively via tasks) reference
  * projects.id with ON DELETE CASCADE, so one delete here is sufficient.
  */
-export async function deleteProject(id: string) {
-  await db.delete(projects).where(eq(projects.id, id));
+export async function deleteProject(id: string, organizationId: string) {
+  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.organizationId, organizationId)));
 }
 
 /**
@@ -110,8 +113,11 @@ export async function deleteProject(id: string) {
  * ON_HOLD or ARCHIVED after launch shouldn't erase the historical launch
  * date).
  */
-export async function updateProjectStatus(projectId: string, status: string) {
-  const [current] = await db.select({ launchedAt: projects.launchedAt }).from(projects).where(eq(projects.id, projectId));
+export async function updateProjectStatus(projectId: string, organizationId: string, status: string) {
+  const [current] = await db
+    .select({ launchedAt: projects.launchedAt })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
   const shouldStampLaunch = status === "LAUNCHED" && !current?.launchedAt;
 
   const [project] = await db
@@ -121,10 +127,11 @@ export async function updateProjectStatus(projectId: string, status: string) {
       ...(shouldStampLaunch ? { launchedAt: new Date() } : {}),
       updatedAt: new Date(),
     })
-    .where(eq(projects.id, projectId))
+    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
     .returning();
 
   await db.insert(activityLogs).values({
+    organizationId,
     projectId,
     action: "project_status_changed",
     detail: status,
@@ -136,12 +143,13 @@ export async function updateProjectStatus(projectId: string, status: string) {
 
 export async function updateProjectOverview(
   projectId: string,
+  organizationId: string,
   input: { domain?: string | null; targetLaunchDate?: Date | null }
 ) {
   const [project] = await db
     .update(projects)
     .set({ ...input, updatedAt: new Date() })
-    .where(eq(projects.id, projectId))
+    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
     .returning();
   return project;
 }
@@ -151,7 +159,7 @@ export async function updateProjectOverview(
  * purely informational (which technologies are in use where), not a live
  * OAuth-synced integration; that's explicitly out of scope for now.
  */
-export async function listTechnologyUsage() {
+export async function listTechnologyUsage(organizationId: string) {
   const allTechnologies = await db.select().from(technologies);
   const rows = await db
     .select({
@@ -161,7 +169,8 @@ export async function listTechnologyUsage() {
       projectStatus: projects.status,
     })
     .from(projectTechnologies)
-    .innerJoin(projects, eq(projectTechnologies.projectId, projects.id));
+    .innerJoin(projects, eq(projectTechnologies.projectId, projects.id))
+    .where(eq(projectTechnologies.organizationId, organizationId));
 
   const projectsByTech = new Map<string, typeof rows>();
   for (const r of rows) {
@@ -181,11 +190,13 @@ export async function listTechnologyUsage() {
  * engine. This is the "Generate Workflow" step of the project wizard.
  */
 export async function createProjectWithWorkflow(input: {
+  organizationId: string;
   clientId: string;
   name: string;
   projectType: string;
   technologyKeys: string[];
 }) {
+  const { organizationId } = input;
   const plan = generateWorkflow(input.technologyKeys);
 
   const [allStages, allTechnologies] = await Promise.all([
@@ -202,6 +213,7 @@ export async function createProjectWithWorkflow(input: {
   const [project] = await db
     .insert(projects)
     .values({
+      organizationId,
       clientId: input.clientId,
       name: input.name,
       projectType: input.projectType,
@@ -211,12 +223,13 @@ export async function createProjectWithWorkflow(input: {
   if (selectedTechIds.length > 0) {
     await db
       .insert(projectTechnologies)
-      .values(selectedTechIds.map((technologyId) => ({ projectId: project.id, technologyId })));
+      .values(selectedTechIds.map((technologyId) => ({ organizationId, projectId: project.id, technologyId })));
   }
 
   if (plan.stages.length > 0) {
     await db.insert(projectStages).values(
       plan.stages.map((s) => ({
+        organizationId,
         projectId: project.id,
         stageId: stageIdByKey.get(s.stageKey)!,
         sortOrder: s.sortOrder,
@@ -233,6 +246,7 @@ export async function createProjectWithWorkflow(input: {
       .insert(tasks)
       .values(
         plan.tasks.map((t) => ({
+          organizationId,
           projectId: project.id,
           stageId: stageIdByKey.get(t.stageKey)!,
           canonicalKey: t.canonicalKey,
@@ -256,6 +270,7 @@ export async function createProjectWithWorkflow(input: {
     // of the tied rows on the next query.
     const subtaskRows = plan.tasks.flatMap((t) =>
       t.subtasks.map((title, i) => ({
+        organizationId,
         projectId: project.id,
         stageId: stageIdByKey.get(t.stageKey)!,
         parentTaskId: canonicalKeyToTaskId.get(t.canonicalKey)!,
@@ -272,10 +287,11 @@ export async function createProjectWithWorkflow(input: {
   if (plan.dependencies.length > 0) {
     const depRows = plan.dependencies
       .map((d) => ({
+        organizationId,
         taskId: canonicalKeyToTaskId.get(d.taskCanonicalKey),
         dependsOnTaskId: canonicalKeyToTaskId.get(d.dependsOnCanonicalKey),
       }))
-      .filter((d): d is { taskId: string; dependsOnTaskId: string } => !!d.taskId && !!d.dependsOnTaskId);
+      .filter((d): d is { organizationId: string; taskId: string; dependsOnTaskId: string } => !!d.taskId && !!d.dependsOnTaskId);
     if (depRows.length > 0) {
       await db.insert(taskDependencies).values(depRows);
     }
@@ -285,6 +301,7 @@ export async function createProjectWithWorkflow(input: {
   if (accessPresets.length > 0) {
     await db.insert(accessItems).values(
       accessPresets.map((preset) => ({
+        organizationId,
         projectId: project.id,
         name: preset.name,
         role: preset.defaultRole,
@@ -298,6 +315,7 @@ export async function createProjectWithWorkflow(input: {
   }
 
   await db.insert(activityLogs).values({
+    organizationId,
     projectId: project.id,
     action: "project_created",
     detail: `Generated ${plan.tasks.length} tasks across ${plan.stages.length} stages from: ${input.technologyKeys.join(", ")}`,
@@ -307,7 +325,7 @@ export async function createProjectWithWorkflow(input: {
   return project;
 }
 
-export async function getProjectDetail(projectId: string) {
+export async function getProjectDetail(projectId: string, organizationId: string) {
   // Two parallel "waves" instead of ~7 queries run one at a time — every
   // query here that only needs projectId (not something from an earlier
   // query's result) fires together. This used to be fully sequential,
@@ -336,7 +354,15 @@ export async function getProjectDetail(projectId: string) {
     );
   const [projectRows, projectStageRows, taskRows, techRows] = await withTimeout(
     Promise.all([
-      timed("project", db.select().from(projects).where(eq(projects.id, projectId))),
+      timed(
+        "project",
+        // The organizationId filter here is the actual security boundary
+        // for this whole function: if projectId belongs to a different
+        // organization, this returns empty and everything below treats it
+        // exactly like "not found" — never leaking another tenant's data
+        // just because its id was guessed or leaked.
+        db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
+      ),
       timed(
         "stages",
         db
@@ -431,8 +457,8 @@ export async function getProjectDetail(projectId: string) {
  * The "Check Project" feature: runs the hand-written forgotten-task rules
  * against this project's actual task set.
  */
-export async function getProjectIssues(projectId: string) {
-  const detail = await getProjectDetail(projectId);
+export async function getProjectIssues(projectId: string, organizationId: string) {
+  const detail = await getProjectDetail(projectId, organizationId);
   if (!detail) return [];
 
   const byCanonicalKey = new Map(detail.tasks.filter((t) => t.canonicalKey).map((t) => [t.canonicalKey!, t]));
@@ -465,7 +491,7 @@ export type ProjectPulseSummary = {
 };
 
 
-export async function updateTaskStatus(taskId: string, status: string) {
+export async function updateTaskStatus(taskId: string, organizationId: string, status: string) {
   const completedAt = status === "DONE" ? new Date() : null;
   // A task marked Done can't still be "waiting on the client" — clear the
   // flag so it doesn't silently reappear in the Waiting On Client list if
@@ -480,11 +506,12 @@ export async function updateTaskStatus(taskId: string, status: string) {
       updatedAt: new Date(),
       ...waitingFields,
     })
-    .where(eq(tasks.id, taskId))
+    .where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId)))
     .returning();
 
   if (task) {
     await db.insert(activityLogs).values({
+      organizationId,
       projectId: task.projectId,
       taskId: task.id,
       action: "task_status_changed",
@@ -493,7 +520,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
     });
 
     // Recompute and persist the project's health score.
-    const detail = await getProjectDetail(task.projectId);
+    const detail = await getProjectDetail(task.projectId, organizationId);
     if (detail) {
       await db
         .update(projects)
@@ -510,7 +537,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
  * /tasks bulk-select bar). Returns the distinct set of affected project ids
  * so the caller knows which project pages to revalidate.
  */
-export async function bulkUpdateTaskStatus(taskIds: string[], status: string): Promise<string[]> {
+export async function bulkUpdateTaskStatus(taskIds: string[], organizationId: string, status: string): Promise<string[]> {
   if (taskIds.length === 0) return [];
   const completedAt = status === "DONE" ? new Date() : null;
   const waitingFields =
@@ -524,13 +551,14 @@ export async function bulkUpdateTaskStatus(taskIds: string[], status: string): P
       updatedAt: new Date(),
       ...waitingFields,
     })
-    .where(inArray(tasks.id, taskIds))
+    .where(and(inArray(tasks.id, taskIds), eq(tasks.organizationId, organizationId)))
     .returning({ id: tasks.id, projectId: tasks.projectId });
 
   if (updated.length === 0) return [];
 
   await db.insert(activityLogs).values(
     updated.map((t) => ({
+      organizationId,
       projectId: t.projectId,
       taskId: t.id,
       action: "task_status_changed",
@@ -541,7 +569,7 @@ export async function bulkUpdateTaskStatus(taskIds: string[], status: string): P
 
   const projectIds = [...new Set(updated.map((t) => t.projectId))];
   for (const projectId of projectIds) {
-    const detail = await getProjectDetail(projectId);
+    const detail = await getProjectDetail(projectId, organizationId);
     if (detail) {
       await db
         .update(projects)
@@ -553,46 +581,50 @@ export async function bulkUpdateTaskStatus(taskIds: string[], status: string): P
   return projectIds;
 }
 
-async function getTaskProjectId(taskId: string) {
-  const [row] = await db.select({ projectId: tasks.projectId }).from(tasks).where(eq(tasks.id, taskId));
+async function getTaskProjectId(taskId: string, organizationId: string) {
+  const [row] = await db
+    .select({ projectId: tasks.projectId })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId)));
   return row?.projectId ?? null;
 }
 
 export async function updateTaskDetails(
   taskId: string,
+  organizationId: string,
   input: { notes?: string | null; dueDate?: Date | null; assignee?: string | null }
 ) {
   const [task] = await db
     .update(tasks)
     .set({ ...input, updatedAt: new Date() })
-    .where(eq(tasks.id, taskId))
+    .where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId)))
     .returning();
   return task;
 }
 
-export async function addTaskTag(taskId: string, tagName: string) {
+export async function addTaskTag(taskId: string, organizationId: string, tagName: string) {
   const name = tagName.trim();
-  if (!name) return getTaskProjectId(taskId);
+  if (!name) return getTaskProjectId(taskId, organizationId);
 
   const [tag] = await db
     .insert(tags)
-    .values({ name })
+    .values({ organizationId, name })
     .onConflictDoUpdate({ target: tags.name, set: { name } })
     .returning();
-  await db.insert(taskTags).values({ taskId, tagId: tag.id }).onConflictDoNothing();
-  return getTaskProjectId(taskId);
+  await db.insert(taskTags).values({ organizationId, taskId, tagId: tag.id }).onConflictDoNothing();
+  return getTaskProjectId(taskId, organizationId);
 }
 
-export async function removeTaskTag(taskId: string, tagId: string) {
-  await db.delete(taskTags).where(and(eq(taskTags.taskId, taskId), eq(taskTags.tagId, tagId)));
-  return getTaskProjectId(taskId);
+export async function removeTaskTag(taskId: string, organizationId: string, tagId: string) {
+  await db.delete(taskTags).where(and(eq(taskTags.taskId, taskId), eq(taskTags.tagId, tagId), eq(taskTags.organizationId, organizationId)));
+  return getTaskProjectId(taskId, organizationId);
 }
 
-export async function addTaskAttachment(taskId: string, input: { url: string; label?: string }) {
+export async function addTaskAttachment(taskId: string, organizationId: string, input: { url: string; label?: string }) {
   const url = input.url.trim();
-  if (!url) return getTaskProjectId(taskId);
-  await db.insert(attachments).values({ taskId, url, label: input.label?.trim() || undefined });
-  return getTaskProjectId(taskId);
+  if (!url) return getTaskProjectId(taskId, organizationId);
+  await db.insert(attachments).values({ organizationId, taskId, url, label: input.label?.trim() || undefined });
+  return getTaskProjectId(taskId, organizationId);
 }
 
 /**
@@ -603,16 +635,16 @@ export async function addTaskAttachment(taskId: string, input: { url: string; la
  * immediate delete regardless of who triggers it (Paul internally, or a
  * client via deleteClientFileAction) — removes it for both sides.
  */
-export async function removeTaskAttachment(attachmentId: string) {
+export async function removeTaskAttachment(attachmentId: string, organizationId: string) {
   const [row] = await db
     .select({ taskId: attachments.taskId, projectId: attachments.projectId, storagePath: attachments.storagePath })
     .from(attachments)
-    .where(eq(attachments.id, attachmentId));
+    .where(and(eq(attachments.id, attachmentId), eq(attachments.organizationId, organizationId)));
   if (!row) return null;
   await db.delete(attachments).where(eq(attachments.id, attachmentId));
   if (row.storagePath) await deleteStorageObjects([row.storagePath]);
   if (row.projectId) return row.projectId;
-  return row.taskId ? getTaskProjectId(row.taskId) : null;
+  return row.taskId ? getTaskProjectId(row.taskId, organizationId) : null;
 }
 
 /**
@@ -620,13 +652,13 @@ export async function removeTaskAttachment(attachmentId: string) {
  * Files tab's bulk-select bar). Returns the distinct set of affected
  * project ids so the caller knows which project pages to revalidate.
  */
-export async function bulkRemoveAttachments(attachmentIds: string[]): Promise<string[]> {
+export async function bulkRemoveAttachments(attachmentIds: string[], organizationId: string): Promise<string[]> {
   if (attachmentIds.length === 0) return [];
   const rows = await db
     .select({ taskId: attachments.taskId, projectId: attachments.projectId, storagePath: attachments.storagePath })
     .from(attachments)
-    .where(inArray(attachments.id, attachmentIds));
-  await db.delete(attachments).where(inArray(attachments.id, attachmentIds));
+    .where(and(inArray(attachments.id, attachmentIds), eq(attachments.organizationId, organizationId)));
+  await db.delete(attachments).where(and(inArray(attachments.id, attachmentIds), eq(attachments.organizationId, organizationId)));
 
   const storagePaths = rows.map((r) => r.storagePath).filter((p): p is string => !!p);
   if (storagePaths.length > 0) await deleteStorageObjects(storagePaths);
@@ -636,14 +668,14 @@ export async function bulkRemoveAttachments(attachmentIds: string[]): Promise<st
     if (row.projectId) {
       projectIds.add(row.projectId);
     } else if (row.taskId) {
-      const pid = await getTaskProjectId(row.taskId);
+      const pid = await getTaskProjectId(row.taskId, organizationId);
       if (pid) projectIds.add(pid);
     }
   }
   return Array.from(projectIds);
 }
 
-/** Looks up which project an attachment belongs to — used to authorize a client's delete request before touching anything. */
+/** Looks up which project an attachment belongs to — used to authorize a client's delete request before touching anything. Deliberately NOT organization-scoped: this is called from public, session-gated actions before any organization is known, purely to find the project so the caller's own ownership check (verifyClientOwnsProjectBySession) can then run against it. */
 export async function getAttachmentProjectId(attachmentId: string): Promise<string | null> {
   const [row] = await db.select({ projectId: attachments.projectId }).from(attachments).where(eq(attachments.id, attachmentId));
   return row?.projectId ?? null;
@@ -654,7 +686,7 @@ export async function getAttachmentProjectId(attachmentId: string): Promise<stri
  * status computed per-project and joined project/client/stage context.
  * Backs the cross-project Tasks, Today, and QA views.
  */
-export async function listAllTasks() {
+export async function listAllTasks(organizationId: string) {
   const rows = await db
     .select({
       id: tasks.id,
@@ -680,9 +712,10 @@ export async function listAllTasks() {
     .innerJoin(projects, eq(tasks.projectId, projects.id))
     .innerJoin(clients, eq(projects.clientId, clients.id))
     .innerJoin(stages, eq(tasks.stageId, stages.id))
+    .where(eq(tasks.organizationId, organizationId))
     .orderBy(tasks.sortOrder);
 
-  const depRows = await db.select().from(taskDependencies);
+  const depRows = await db.select().from(taskDependencies).where(eq(taskDependencies.organizationId, organizationId));
 
   const projectIdByTaskId = new Map(rows.map((r) => [r.id, r.projectId]));
   const tasksByProject = new Map<string, typeof rows>();
@@ -718,12 +751,20 @@ export async function listAllTasks() {
  * too, so the new task actually has somewhere to render.
  */
 export async function createAdHocTask(input: {
+  organizationId: string;
   projectId: string;
   stageKey: string;
   title: string;
   priority: string;
   isCritical: boolean;
 }) {
+  const { organizationId } = input;
+  const [ownedProject] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, input.projectId), eq(projects.organizationId, organizationId)));
+  if (!ownedProject) throw new Error("Project not found");
+
   const [stage] = await db.select().from(stages).where(eq(stages.key, input.stageKey));
   if (!stage) throw new Error(`Unknown stage: ${input.stageKey}`);
 
@@ -738,6 +779,7 @@ export async function createAdHocTask(input: {
       .from(projectStages)
       .where(eq(projectStages.projectId, input.projectId));
     await db.insert(projectStages).values({
+      organizationId,
       projectId: input.projectId,
       stageId: stage.id,
       sortOrder: maxSort + 1,
@@ -752,6 +794,7 @@ export async function createAdHocTask(input: {
   const [task] = await db
     .insert(tasks)
     .values({
+      organizationId,
       projectId: input.projectId,
       stageId: stage.id,
       title: input.title,
@@ -762,6 +805,7 @@ export async function createAdHocTask(input: {
     .returning();
 
   await db.insert(activityLogs).values({
+    organizationId,
     projectId: input.projectId,
     taskId: task.id,
     action: "task_added_manually",
@@ -1076,16 +1120,17 @@ export function deriveProjectCardSummaries(
 // ---------------------------------------------------------------------------
 
 /** Sets (or returns the existing) handoff token for a project. */
-export async function generateHandoffLink(projectId: string): Promise<string> {
+export async function generateHandoffLink(projectId: string, organizationId: string): Promise<string> {
   const [existing] = await db
     .select({ handoffToken: projects.handoffToken })
     .from(projects)
-    .where(eq(projects.id, projectId));
+    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
   if (existing?.handoffToken) return existing.handoffToken;
 
   const token = randomBytes(24).toString("hex");
-  await db.update(projects).set({ handoffToken: token }).where(eq(projects.id, projectId));
+  await db.update(projects).set({ handoffToken: token }).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
   await db.insert(activityLogs).values({
+    organizationId,
     projectId,
     action: "handoff_link_generated",
     detail: null,
@@ -1094,9 +1139,10 @@ export async function generateHandoffLink(projectId: string): Promise<string> {
   return token;
 }
 
-export async function revokeHandoffLink(projectId: string): Promise<void> {
-  await db.update(projects).set({ handoffToken: null }).where(eq(projects.id, projectId));
+export async function revokeHandoffLink(projectId: string, organizationId: string): Promise<void> {
+  await db.update(projects).set({ handoffToken: null }).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
   await db.insert(activityLogs).values({
+    organizationId,
     projectId,
     action: "handoff_link_revoked",
     detail: null,
@@ -1184,7 +1230,7 @@ async function getProjectClientSafeDetail(projectId: string) {
   };
 }
 
-export async function listProjectMessages(projectId: string) {
+export async function listProjectMessages(projectId: string, organizationId: string) {
   const rows = await db
     .select({
       id: projectMessages.id,
@@ -1199,7 +1245,7 @@ export async function listProjectMessages(projectId: string) {
     })
     .from(projectMessages)
     .leftJoin(attachments, eq(attachments.messageId, projectMessages.id))
-    .where(eq(projectMessages.projectId, projectId))
+    .where(and(eq(projectMessages.projectId, projectId), eq(projectMessages.organizationId, organizationId)))
     .orderBy(projectMessages.createdAt);
 
   return Promise.all(
@@ -1221,9 +1267,10 @@ export async function listProjectMessages(projectId: string) {
 }
 
 /** Posts to a project's Comments thread and logs it to Recent Activity — shared by the internal Messages tab (authorName: "Paul") and the public Client Portal (authorName: "Client"). Returns the inserted row so a caller attaching a file can link it to this message's id. */
-export async function postProjectMessage(projectId: string, authorName: string, body: string) {
-  const [message] = await db.insert(projectMessages).values({ projectId, authorName, body }).returning();
+export async function postProjectMessage(projectId: string, organizationId: string, authorName: string, body: string) {
+  const [message] = await db.insert(projectMessages).values({ organizationId, projectId, authorName, body }).returning();
   await db.insert(activityLogs).values({
+    organizationId,
     projectId,
     action: authorName === CLIENT_ACTOR_NAME ? "client_message_posted" : "message_posted",
     detail: body,
@@ -1232,7 +1279,7 @@ export async function postProjectMessage(projectId: string, authorName: string, 
   return message;
 }
 
-/** Which project a message belongs to and who wrote it — used to authorize deletion (a client may only delete their own messages). */
+/** Which project a message belongs to and who wrote it — used to authorize deletion (a client may only delete their own messages). Deliberately not organization-scoped: called before the caller's own authorization check (session or portal token) runs, purely to resolve context for that check. */
 export async function getMessageOwnership(messageId: string) {
   const [row] = await db
     .select({ projectId: projectMessages.projectId, authorName: projectMessages.authorName })
@@ -1242,15 +1289,18 @@ export async function getMessageOwnership(messageId: string) {
 }
 
 /** Deletes one message. Looks up its attachment's storage path first — deleting the message cascades the attachment's DB row automatically, but the actual Supabase Storage object needs an explicit delete before that row is gone. */
-export async function deleteProjectMessage(messageId: string) {
+export async function deleteProjectMessage(messageId: string, organizationId: string) {
   const [attachment] = await db.select({ storagePath: attachments.storagePath }).from(attachments).where(eq(attachments.messageId, messageId));
-  await db.delete(projectMessages).where(eq(projectMessages.id, messageId));
+  await db.delete(projectMessages).where(and(eq(projectMessages.id, messageId), eq(projectMessages.organizationId, organizationId)));
   if (attachment?.storagePath) await deleteStorageObjects([attachment.storagePath]);
 }
 
 /** Wipes an entire project's Comments thread, both authors' messages — same storage-cleanup-before-cascade-delete reasoning as deleteProjectMessage. */
-export async function deleteAllProjectMessages(projectId: string) {
-  const ids = await db.select({ id: projectMessages.id }).from(projectMessages).where(eq(projectMessages.projectId, projectId));
+export async function deleteAllProjectMessages(projectId: string, organizationId: string) {
+  const ids = await db
+    .select({ id: projectMessages.id })
+    .from(projectMessages)
+    .where(and(eq(projectMessages.projectId, projectId), eq(projectMessages.organizationId, organizationId)));
   const messageIds = ids.map((r) => r.id);
   const paths =
     messageIds.length > 0
@@ -1258,7 +1308,7 @@ export async function deleteAllProjectMessages(projectId: string) {
           .map((a) => a.storagePath)
           .filter((p): p is string => !!p)
       : [];
-  await db.delete(projectMessages).where(eq(projectMessages.projectId, projectId));
+  await db.delete(projectMessages).where(and(eq(projectMessages.projectId, projectId), eq(projectMessages.organizationId, organizationId)));
   if (paths.length > 0) await deleteStorageObjects(paths);
 }
 
@@ -1279,6 +1329,7 @@ export async function getProjectByHandoffToken(token: string) {
   // so Command Center can show "last viewed" and Paul knows whether the
   // client actually opened the link he sent.
   await db.insert(activityLogs).values({
+    organizationId: project.organizationId,
     projectId: project.id,
     action: "handoff_viewed",
     detail: null,
@@ -1327,44 +1378,15 @@ export async function getClientVisibleFiles(projectId: string) {
 }
 
 /**
- * Client Portal drill-down — resolves the client from their *client-level*
- * portalToken (not a project-level token), then verifies the requested
- * project actually belongs to that client before returning anything. This
- * ownership check is the one thing standing between a client and being
- * able to view another client's project by guessing a projectId in the
- * URL — never skip it.
+ * Collapses a project's up-to-18 internal stages into the 5 client-facing
+ * phases from CLIENT_PORTAL_PHASES (Access & Credentials, Integrations,
+ * Security, Handoff, etc. are more detail than a client needs). A phase
+ * only shows if the project actually has at least one task in it. Shared by
+ * getClientProjectPortalDetail (single-project drill-down) and
+ * getClientWorkspaceOverview (the Client Workspace's per-project summary
+ * cards) so the two can never disagree about what "current stage" means.
  */
-export async function getClientProjectPortalDetail(portalToken: string, projectId: string) {
-  const [row] = await db
-    .select({ project: projects, clientId: clients.id, clientName: clients.name })
-    .from(clients)
-    .innerJoin(projects, eq(projects.clientId, clients.id))
-    .where(and(eq(clients.portalToken, portalToken), eq(projects.id, projectId)));
-  if (!row) return null;
-  const { project, clientName } = row;
-
-  const [detail, stageRows, clientFiles, messages] = await Promise.all([
-    getProjectClientSafeDetail(project.id),
-    db
-      .select({
-        stageKey: stages.key,
-        stageSortOrder: stages.sortOrder,
-        taskStatus: tasks.status,
-      })
-      .from(projectStages)
-      .innerJoin(stages, eq(projectStages.stageId, stages.id))
-      .leftJoin(tasks, and(eq(tasks.stageId, stages.id), eq(tasks.projectId, project.id), isNull(tasks.parentTaskId)))
-      .where(eq(projectStages.projectId, project.id)),
-    getClientVisibleFiles(project.id),
-    listProjectMessages(project.id),
-  ]);
-
-  // One row per stage/task combination above — collapse into per-(real)-
-  // stage done/total first, then further collapse the up-to-18 internal
-  // stages into the 5 client-facing phases from CLIENT_PORTAL_PHASES (the
-  // internal app's own granularity — Access & Credentials, Integrations,
-  // Security, Handoff, etc. — is more detail than a client needs). A phase
-  // only shows if the project actually has at least one task in it.
+function summarizeClientPhases(stageRows: { stageKey: string; taskStatus: string | null }[]) {
   const stageMap = new Map<string, { done: number; total: number }>();
   for (const r of stageRows) {
     const entry = stageMap.get(r.stageKey) ?? { done: 0, total: 0 };
@@ -1388,20 +1410,158 @@ export async function getClientProjectPortalDetail(portalToken: string, projectI
   }).filter((p) => p.total > 0);
   const currentStageIndex = orderedStages.findIndex((s) => s.done < s.total);
 
+  const stagesOut = orderedStages.map((s, i) => ({
+    name: s.name,
+    done: s.done,
+    total: s.total,
+    isCurrent: i === currentStageIndex,
+    isDone: currentStageIndex === -1 ? true : i < currentStageIndex,
+  }));
+  const totalDone = orderedStages.reduce((sum, s) => sum + s.done, 0);
+  const totalTasks = orderedStages.reduce((sum, s) => sum + s.total, 0);
+  const percent = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+  const currentStageName = currentStageIndex === -1 ? null : orderedStages[currentStageIndex].name;
+
+  return { stages: stagesOut, percent, currentStageName };
+}
+
+async function getClientPhaseStageRows(projectId: string) {
+  return db
+    .select({
+      stageKey: stages.key,
+      stageSortOrder: stages.sortOrder,
+      taskStatus: tasks.status,
+    })
+    .from(projectStages)
+    .innerJoin(stages, eq(projectStages.stageId, stages.id))
+    .leftJoin(tasks, and(eq(tasks.stageId, stages.id), eq(tasks.projectId, projectId), isNull(tasks.parentTaskId)))
+    .where(eq(projectStages.projectId, projectId));
+}
+
+/**
+ * Client Workspace's per-project detail (the Projects tab) — resolves via
+ * the logged-in client's own id (from requireClientAuth()'s session, never
+ * request input), then verifies the requested project actually belongs to
+ * that client before returning anything. This ownership check is the one
+ * thing standing between a client and being able to view another client's
+ * project by guessing a projectId — never skip it.
+ */
+export async function getClientProjectPortalDetail(clientId: string, projectId: string) {
+  const [row] = await db
+    .select({ project: projects, clientName: clients.name })
+    .from(clients)
+    .innerJoin(projects, eq(projects.clientId, clients.id))
+    .where(and(eq(clients.id, clientId), eq(projects.id, projectId)));
+  if (!row) return null;
+  const { project, clientName } = row;
+
+  const [detail, stageRows, clientFiles, messages] = await Promise.all([
+    getProjectClientSafeDetail(project.id),
+    getClientPhaseStageRows(project.id),
+    getClientVisibleFiles(project.id),
+    listProjectMessages(project.id, project.organizationId!),
+  ]);
+
+  const { stages: orderedStages } = summarizeClientPhases(stageRows);
+
   return {
     project,
     clientName: clientName ?? "",
     ...detail,
-    stages: orderedStages.map((s, i) => ({
-      name: s.name,
-      done: s.done,
-      total: s.total,
-      isCurrent: i === currentStageIndex,
-      isDone: currentStageIndex === -1 ? true : i < currentStageIndex,
-    })),
+    stages: orderedStages,
     clientFiles,
     messages,
   };
+}
+
+/**
+ * The Client Workspace's Overview tab — one summary per active project for
+ * a client who may have several. Deliberately avoids activity_logs as the
+ * "recent updates" source (it carries internal-ops entries like "generated
+ * the handoff link" that a client shouldn't see); "recently completed" and
+ * "next up" are derived straight from real task state instead, which is
+ * inherently client-appropriate.
+ */
+export async function getClientWorkspaceOverview(clientId: string) {
+  const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
+  if (!client) return null;
+
+  const clientProjects = await db.select().from(projects).where(eq(projects.clientId, client.id));
+
+  const projectSummaries = await Promise.all(
+    clientProjects.map(async (project) => {
+      const [topLevel, stageRows] = await Promise.all([
+        db
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            status: tasks.status,
+            canonicalKey: tasks.canonicalKey,
+            completedAt: tasks.completedAt,
+          })
+          .from(tasks)
+          .where(and(eq(tasks.projectId, project.id), isNull(tasks.parentTaskId))),
+        getClientPhaseStageRows(project.id),
+      ]);
+
+      const { percent, currentStageName } = summarizeClientPhases(stageRows);
+
+      const recentlyCompleted = topLevel
+        .filter((t) => t.status === "DONE" && t.completedAt)
+        .sort((a, b) => +new Date(b.completedAt!) - +new Date(a.completedAt!))
+        .slice(0, 2)
+        .map((t) => t.title);
+
+      const nextUp = topLevel.find((t) => t.status !== "DONE" && t.status !== "SKIPPED")?.title ?? null;
+
+      const clientActions = topLevel
+        .filter((t) => CLIENT_ACTION_CANONICAL_KEYS.has(t.canonicalKey ?? "") && t.status !== "DONE")
+        .map((t) => ({ id: t.id, title: t.title }));
+
+      return { project, percent, currentStageName, recentlyCompleted, nextUp, clientActions };
+    })
+  );
+
+  return { client, projectSummaries };
+}
+
+/**
+ * Client-triggered "Review → Done" action from the Client Workspace's
+ * "Your Action" callout. Only allows marking a task done if it belongs to
+ * the given project AND its canonicalKey is a real client action
+ * (CLIENT_ACTION_CANONICAL_KEYS) — a crafted request with an arbitrary
+ * taskId can't mark unrelated dev/QA work done. actorName is stamped
+ * "Client" directly rather than via updateTaskStatus (which always
+ * attributes to the agency owner) — same reasoning as handoff_viewed being
+ * the one other genuinely client-triggered write.
+ */
+export async function markClientActionTaskDone(taskId: string, projectId: string, organizationId: string) {
+  const [task] = await db
+    .select({ id: tasks.id, canonicalKey: tasks.canonicalKey })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId), eq(tasks.organizationId, organizationId)));
+  if (!task || !CLIENT_ACTION_CANONICAL_KEYS.has(task.canonicalKey ?? "")) {
+    throw new Error("This action can't be completed here.");
+  }
+
+  await db
+    .update(tasks)
+    .set({ status: "DONE", completedAt: new Date(), updatedAt: new Date(), isWaitingOnClient: false, waitingOnClientSince: null })
+    .where(eq(tasks.id, taskId));
+
+  await db.insert(activityLogs).values({
+    organizationId,
+    projectId,
+    taskId,
+    action: "task_status_changed",
+    detail: "DONE",
+    actorName: CLIENT_ACTOR_NAME,
+  });
+
+  const detail = await getProjectDetail(projectId, organizationId);
+  if (detail) {
+    await db.update(projects).set({ healthScore: detail.healthScore, updatedAt: new Date() }).where(eq(projects.id, projectId));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,7 +1569,7 @@ export async function getClientProjectPortalDetail(portalToken: string, projectI
 // ---------------------------------------------------------------------------
 
 /** Most recent activity_logs entries for a project, newest first, with the related task's title when there is one. */
-export async function listRecentActivity(projectId: string, limit = 8) {
+export async function listRecentActivity(projectId: string, organizationId: string, limit = 8) {
   return db
     .select({
       id: activityLogs.id,
@@ -1421,13 +1581,13 @@ export async function listRecentActivity(projectId: string, limit = 8) {
     })
     .from(activityLogs)
     .leftJoin(tasks, eq(activityLogs.taskId, tasks.id))
-    .where(eq(activityLogs.projectId, projectId))
+    .where(and(eq(activityLogs.projectId, projectId), eq(activityLogs.organizationId, organizationId)))
     .orderBy(desc(activityLogs.createdAt))
     .limit(limit);
 }
 
-/** Same as `listRecentActivity` but across every project — backs the dashboard's Recent Activity feed. */
-export async function listRecentActivityAcrossProjects(limit = 10) {
+/** Same as `listRecentActivity` but across every project in the caller's organization — backs the dashboard's Recent Activity feed. */
+export async function listRecentActivityAcrossProjects(organizationId: string, limit = 10) {
   return db
     .select({
       id: activityLogs.id,
@@ -1442,16 +1602,23 @@ export async function listRecentActivityAcrossProjects(limit = 10) {
     .from(activityLogs)
     .innerJoin(projects, eq(activityLogs.projectId, projects.id))
     .leftJoin(tasks, eq(activityLogs.taskId, tasks.id))
+    .where(eq(activityLogs.organizationId, organizationId))
     .orderBy(desc(activityLogs.createdAt))
     .limit(limit);
 }
 
 /** Most recent time the client actually opened the public /handoff/[token] page, or null if never. */
-export async function getLastHandoffView(projectId: string): Promise<Date | null> {
+export async function getLastHandoffView(projectId: string, organizationId: string): Promise<Date | null> {
   const [row] = await db
     .select({ createdAt: activityLogs.createdAt })
     .from(activityLogs)
-    .where(and(eq(activityLogs.projectId, projectId), eq(activityLogs.action, "handoff_viewed")))
+    .where(
+      and(
+        eq(activityLogs.projectId, projectId),
+        eq(activityLogs.organizationId, organizationId),
+        eq(activityLogs.action, "handoff_viewed")
+      )
+    )
     .orderBy(desc(activityLogs.createdAt))
     .limit(1);
   return row?.createdAt ?? null;
@@ -1467,11 +1634,11 @@ export async function getLastHandoffView(projectId: string): Promise<Date | null
  * moment it's flagged and clears it on unflag, so "oldest waiting" reflects
  * exactly how long the client has been the blocker.
  */
-export async function setTaskWaitingOnClient(taskId: string, waiting: boolean): Promise<string | null> {
+export async function setTaskWaitingOnClient(taskId: string, organizationId: string, waiting: boolean): Promise<string | null> {
   const [task] = await db
     .update(tasks)
     .set({ isWaitingOnClient: waiting, waitingOnClientSince: waiting ? new Date() : null, updatedAt: new Date() })
-    .where(eq(tasks.id, taskId))
+    .where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId)))
     .returning({ projectId: tasks.projectId });
   return task?.projectId ?? null;
 }
@@ -1487,7 +1654,7 @@ export async function setTaskWaitingOnClient(taskId: string, waiting: boolean): 
  * Backs the Files tab; doesn't resolve signed URLs itself (callers do that,
  * same pattern as getProjectDetail's task attachments).
  */
-export async function listProjectAttachments(projectId: string) {
+export async function listProjectAttachments(projectId: string, organizationId: string) {
   const rows = await db
     .select({
       id: attachments.id,
@@ -1502,14 +1669,19 @@ export async function listProjectAttachments(projectId: string) {
     })
     .from(attachments)
     .leftJoin(tasks, eq(attachments.taskId, tasks.id))
-    .where(or(eq(attachments.projectId, projectId), eq(tasks.projectId, projectId)))
+    .where(
+      and(
+        eq(attachments.organizationId, organizationId),
+        or(eq(attachments.projectId, projectId), eq(tasks.projectId, projectId))
+      )
+    )
     .orderBy(desc(attachments.createdAt));
   return rows.map(({ messageId, ...r }) => ({ ...r, viaChat: !!messageId }));
 }
 
 /** Same as listProjectAttachments, with signed URLs already resolved for storagePath rows — shared by the Files tab's initial server render and its polling route, so both stay in sync with a single implementation. */
-export async function listProjectAttachmentsWithUrls(projectId: string) {
-  const files = await listProjectAttachments(projectId);
+export async function listProjectAttachmentsWithUrls(projectId: string, organizationId: string) {
+  const files = await listProjectAttachments(projectId, organizationId);
   return Promise.all(
     files.map(async (f) => ({
       ...f,
@@ -1518,6 +1690,6 @@ export async function listProjectAttachmentsWithUrls(projectId: string) {
   );
 }
 
-export async function updateProjectNotes(projectId: string, notes: string | null) {
-  await db.update(projects).set({ notes, updatedAt: new Date() }).where(eq(projects.id, projectId));
+export async function updateProjectNotes(projectId: string, organizationId: string, notes: string | null) {
+  await db.update(projects).set({ notes, updatedAt: new Date() }).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
 }

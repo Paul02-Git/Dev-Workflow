@@ -21,7 +21,7 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PortalComments({ token, projects }: { token: string; projects: ProjectThread[] }) {
+export function PortalComments({ projects }: { projects: ProjectThread[] }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
@@ -36,7 +36,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
 
   async function refetch(projectId: string) {
     try {
-      const res = await fetch(`/api/portal/${token}/projects/${projectId}/messages`, { cache: "no-store" });
+      const res = await fetch(`/api/portal/projects/${projectId}/messages`, { cache: "no-store" });
       if (res.ok) {
         const fresh: Message[] = await res.json();
         setLiveMessagesByProject((prev) => ({ ...prev, [projectId]: fresh }));
@@ -56,7 +56,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
     const id = selectedProject.id;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/portal/${token}/projects/${id}/messages`, { cache: "no-store" });
+        const res = await fetch(`/api/portal/projects/${id}/messages`, { cache: "no-store" });
         if (!res.ok) throw new Error(`poll failed: ${res.status}`);
         const fresh: Message[] = await res.json();
         setLiveMessagesByProject((prev) =>
@@ -68,7 +68,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
     };
     const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [token, selectedProject]);
+  }, [selectedProject]);
 
   // Jump to the newest message whenever the thread changes (a poll picks
   // up a reply, our own send lands, or the selected project changes) — a
@@ -81,7 +81,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
 
   if (!selectedProject) {
     return (
-      <section className="flex h-[600px] flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
+      <section className="flex h-[600px] min-w-0 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
         <h2 className="mb-1 text-sm font-bold">Comments</h2>
         <p className="text-xs text-muted-foreground">You&apos;ll be able to message Paul here once your first project is set up.</p>
       </section>
@@ -95,7 +95,6 @@ export function PortalComments({ token, projects }: { token: string; projects: P
     if (!body) return;
     setDraft("");
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("projectId", projectId);
     formData.set("body", body);
     startTransition(async () => {
@@ -107,7 +106,6 @@ export function PortalComments({ token, projects }: { token: string; projects: P
   function handleFilePicked(file: File) {
     setUploading(true);
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("projectId", projectId);
     formData.set("file", file);
     startTransition(async () => {
@@ -126,7 +124,6 @@ export function PortalComments({ token, projects }: { token: string; projects: P
     if (!confirm("Delete this message?")) return;
     setLiveMessagesByProject((prev) => ({ ...prev, [projectId]: liveMessages.filter((m) => m.id !== messageId) }));
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("messageId", messageId);
     startTransition(async () => {
       await deleteClientMessageAction(formData);
@@ -138,7 +135,6 @@ export function PortalComments({ token, projects }: { token: string; projects: P
     if (!confirm("Delete the entire conversation? This can't be undone.")) return;
     setLiveMessagesByProject((prev) => ({ ...prev, [projectId]: [] }));
     const formData = new FormData();
-    formData.set("token", token);
     formData.set("projectId", projectId);
     startTransition(async () => {
       await deleteAllClientMessagesAction(formData);
@@ -146,7 +142,7 @@ export function PortalComments({ token, projects }: { token: string; projects: P
   }
 
   return (
-    <section className="flex h-[600px] flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
+    <section className="flex h-[600px] min-w-0 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-bold">Comments</h2>
         {liveMessages.length > 0 && (
@@ -175,15 +171,15 @@ export function PortalComments({ token, projects }: { token: string; projects: P
           liveMessages.map((m) => {
             const isClient = m.authorName === "Client";
             return (
-              <div key={m.id} className={`group flex gap-2 ${isClient ? "flex-row-reverse text-right" : ""}`}>
+              <div key={m.id} className={`group flex gap-2 ${isClient ? "flex-row-reverse" : ""}`}>
                 <span
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                   style={{ backgroundColor: isClient ? "#a259ff" : "#2a78d6" }}
                 >
                   {m.authorName.charAt(0).toUpperCase()}
                 </span>
-                <div className="max-w-[78%]">
-                  <div className={`mb-0.5 flex items-baseline gap-1.5 text-[11px] text-muted-foreground ${isClient ? "flex-row-reverse" : ""}`}>
+                <div className={`flex min-w-0 max-w-[78%] flex-col gap-0.5 ${isClient ? "items-end" : "items-start"}`}>
+                  <div className={`flex items-baseline gap-1.5 text-[11px] text-muted-foreground ${isClient ? "flex-row-reverse" : ""}`}>
                     <span className="font-semibold text-[#52514e]">{m.authorName}</span>
                     <span>{formatTime(m.createdAt)}</span>
                   </div>
@@ -192,14 +188,14 @@ export function PortalComments({ token, projects }: { token: string; projects: P
                       href={m.attachment.url ?? undefined}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs hover:border-primary ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}
+                      className={`flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs hover:border-primary ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}
                     >
                       <FileIcon className="size-4 shrink-0 text-muted-foreground" />
                       <span className="truncate font-medium">{m.attachment.label ?? "File"}</span>
                       <span className="shrink-0 text-muted-foreground">{formatFileSize(m.attachment.fileSize)}</span>
                     </a>
                   ) : (
-                    <div className={`rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
+                    <div className={`max-w-full whitespace-pre-wrap break-words rounded-xl border px-3 py-2 text-sm ${isClient ? "border-transparent bg-[#eef2fb]" : "border-black/10 bg-background"}`}>
                       {m.body}
                     </div>
                   )}

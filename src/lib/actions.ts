@@ -6,11 +6,13 @@ import {
   updateClient,
   deleteClient,
   createClientViaIntake,
-  getClientByPortalToken,
-  generateClientPortalLink,
-  revokeClientPortalLink,
-  verifyClientOwnsProject,
+  generateClientInviteLink,
+  revokeClientInviteLink,
+  verifyClientOwnsProjectBySession,
+  setClientPassword,
+  getClientRecordForSelf,
 } from "@/lib/queries/clients";
+import { cookies } from "next/headers";
 import {
   createProjectWithWorkflow,
   updateTaskStatus,
@@ -35,7 +37,15 @@ import {
   revealAccessItemPassword,
   clearAccessItemCredentials,
 } from "@/lib/queries/access-items";
-import { requireAuth } from "@/lib/auth";
+import {
+  requireAuth,
+  requireClientAuth,
+  makeClientSessionCookieValue,
+  CLIENT_SESSION_COOKIE_NAME,
+  checkClientLoginRateLimit,
+  recordClientLoginAttempt,
+  verifyClientPassword,
+} from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ALL_ACCESS_ITEM_PRESETS } from "@/data/access-item-presets";
 import { searchAll, type SearchResult } from "@/lib/queries/search";
@@ -54,6 +64,7 @@ import {
   deleteProjectMessage,
   deleteAllProjectMessages,
   getAttachmentProjectId,
+  markClientActionTaskDone,
 } from "@/lib/queries/projects";
 import {
   uploadTaskAttachment,
@@ -62,7 +73,7 @@ import {
   replaceAttachment,
   getSignedAttachmentUrl,
 } from "@/lib/storage";
-import { isValidIntakeToken, generateIntakeToken, revokeIntakeToken } from "@/lib/queries/agency-settings";
+import { resolveIntakeToken, generateIntakeToken, revokeIntakeToken } from "@/lib/queries/agency-settings";
 import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { PROJECT_TYPES } from "@/data/project-types";
 
@@ -71,10 +82,12 @@ import { PROJECT_TYPES } from "@/data/project-types";
 // the new card appearing in the grid you're already looking at, not a
 // navigation away from it.
 export async function createClientAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Client name is required");
 
   await createClient({
+    organizationId,
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
@@ -86,11 +99,12 @@ export async function createClientAction(formData: FormData) {
 }
 
 export async function updateClientAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const clientId = String(formData.get("clientId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!clientId || !name) throw new Error("Client name is required");
 
-  await updateClient(clientId, {
+  await updateClient(clientId, organizationId, {
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
@@ -102,6 +116,7 @@ export async function updateClientAction(formData: FormData) {
 }
 
 export async function createProjectAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   let clientId = String(formData.get("clientId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const projectType = String(formData.get("projectType") ?? "");
@@ -112,6 +127,7 @@ export async function createProjectAction(formData: FormData) {
     if (!newClientName) throw new Error("New client name is required");
 
     const newClient = await createClient({
+      organizationId,
       name: newClientName,
       company: String(formData.get("newClientCompany") ?? "") || undefined,
       contactEmail: String(formData.get("newClientEmail") ?? "") || undefined,
@@ -125,6 +141,7 @@ export async function createProjectAction(formData: FormData) {
   }
 
   const project = await createProjectWithWorkflow({
+    organizationId,
     clientId,
     name,
     projectType,
@@ -136,7 +153,8 @@ export async function createProjectAction(formData: FormData) {
 }
 
 export async function updateTaskStatusAction(taskId: string, status: string) {
-  const task = await updateTaskStatus(taskId, status);
+  const { organizationId } = await requireAuth();
+  const task = await updateTaskStatus(taskId, organizationId, status);
   if (task) {
     revalidatePath(`/projects/${task.projectId}`);
     revalidatePath("/dashboard");
@@ -145,7 +163,8 @@ export async function updateTaskStatusAction(taskId: string, status: string) {
 
 /** "Start Task" on the dashboard's Command Center panel — marks the task in progress and refreshes both pages. */
 export async function startDashboardTaskAction(taskId: string) {
-  const task = await updateTaskStatus(taskId, "IN_PROGRESS");
+  const { organizationId } = await requireAuth();
+  const task = await updateTaskStatus(taskId, organizationId, "IN_PROGRESS");
   if (task) {
     revalidatePath("/dashboard");
     revalidatePath(`/projects/${task.projectId}`);
@@ -156,7 +175,8 @@ export async function updateTaskDetailsAction(
   taskId: string,
   input: { notes?: string | null; dueDate?: string | null; assignee?: string | null }
 ) {
-  const task = await updateTaskDetails(taskId, {
+  const { organizationId } = await requireAuth();
+  const task = await updateTaskDetails(taskId, organizationId, {
     notes: input.notes,
     dueDate: input.dueDate ? new Date(input.dueDate) : input.dueDate === "" ? null : undefined,
     assignee: input.assignee,
@@ -165,7 +185,8 @@ export async function updateTaskDetailsAction(
 }
 
 export async function setTaskWaitingOnClientAction(taskId: string, waiting: boolean) {
-  const projectId = await setTaskWaitingOnClient(taskId, waiting);
+  const { organizationId } = await requireAuth();
+  const projectId = await setTaskWaitingOnClient(taskId, organizationId, waiting);
   if (projectId) {
     revalidatePath(`/projects/${projectId}`);
     revalidatePath("/dashboard");
@@ -173,22 +194,26 @@ export async function setTaskWaitingOnClientAction(taskId: string, waiting: bool
 }
 
 export async function addTaskTagAction(taskId: string, tagName: string) {
-  const projectId = await addTaskTag(taskId, tagName);
+  const { organizationId } = await requireAuth();
+  const projectId = await addTaskTag(taskId, organizationId, tagName);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function removeTaskTagAction(taskId: string, tagId: string) {
-  const projectId = await removeTaskTag(taskId, tagId);
+  const { organizationId } = await requireAuth();
+  const projectId = await removeTaskTag(taskId, organizationId, tagId);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function addTaskAttachmentAction(taskId: string, url: string, label: string) {
-  const projectId = await addTaskAttachment(taskId, { url, label });
+  const { organizationId } = await requireAuth();
+  const projectId = await addTaskAttachment(taskId, organizationId, { url, label });
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function removeTaskAttachmentAction(attachmentId: string) {
-  const projectId = await removeTaskAttachment(attachmentId);
+  const { organizationId } = await requireAuth();
+  const projectId = await removeTaskAttachment(attachmentId, organizationId);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
@@ -212,22 +237,25 @@ export async function resolveAttachmentUrlsAction(
 }
 
 export async function bulkRemoveAttachmentsAction(attachmentIds: string[]) {
+  const { organizationId } = await requireAuth();
   // No revalidatePath — FilesTab already refetches on its own right after this.
-  await bulkRemoveAttachments(attachmentIds);
+  await bulkRemoveAttachments(attachmentIds, organizationId);
 }
 
 export async function replaceAttachmentAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const attachmentId = String(formData.get("attachmentId") ?? "");
   const file = formData.get("file");
   if (!attachmentId || !(file instanceof File)) {
     throw new Error("Missing attachment or file");
   }
-  const projectId = await replaceAttachment(attachmentId, file);
+  const projectId = await replaceAttachment(attachmentId, organizationId, file);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function deleteProjectAction(projectId: string) {
-  await deleteProject(projectId);
+  const { organizationId } = await requireAuth();
+  await deleteProject(projectId, organizationId);
   revalidatePath("/projects");
   revalidatePath("/clients");
   redirect("/projects");
@@ -242,25 +270,29 @@ export async function deleteProjectAction(projectId: string) {
  * Promise.all, or from a row that isn't navigating away, would be wrong.
  */
 export async function deleteProjectFromListAction(projectId: string) {
-  await deleteProject(projectId);
+  const { organizationId } = await requireAuth();
+  await deleteProject(projectId, organizationId);
   revalidatePath("/projects");
   revalidatePath("/clients");
   revalidatePath("/dashboard");
 }
 
 export async function deleteClientAction(clientId: string) {
-  await deleteClient(clientId);
+  const { organizationId } = await requireAuth();
+  await deleteClient(clientId, organizationId);
   revalidatePath("/clients");
   redirect("/clients");
 }
 
 /** Same delete as deleteClientAction, minus the redirect — for a kebab menu on the clients list itself, which is already where deleteClientAction's redirect would send you. */
 export async function deleteClientFromListAction(clientId: string) {
-  await deleteClient(clientId);
+  const { organizationId } = await requireAuth();
+  await deleteClient(clientId, organizationId);
   revalidatePath("/clients");
 }
 
 export async function createTaskAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const stageKey = String(formData.get("stageKey") ?? "");
   const title = String(formData.get("title") ?? "").trim();
@@ -271,19 +303,20 @@ export async function createTaskAction(formData: FormData) {
     throw new Error("Stage and title are required");
   }
 
-  await createAdHocTask({ projectId, stageKey, title, priority, isCritical });
+  await createAdHocTask({ organizationId, projectId, stageKey, title, priority, isCritical });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
 
 export async function updateProjectOverviewAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const domain = String(formData.get("domain") ?? "").trim();
   const targetLaunchDate = String(formData.get("targetLaunchDate") ?? "").trim();
 
   if (!projectId) throw new Error("Missing project");
 
-  await updateProjectOverview(projectId, {
+  await updateProjectOverview(projectId, organizationId, {
     domain: domain || null,
     targetLaunchDate: targetLaunchDate ? new Date(targetLaunchDate) : null,
   });
@@ -291,14 +324,15 @@ export async function updateProjectOverviewAction(formData: FormData) {
 }
 
 export async function updateProjectStatusAction(projectId: string, status: string) {
-  await updateProjectStatus(projectId, status);
+  const { organizationId } = await requireAuth();
+  await updateProjectStatus(projectId, organizationId, status);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
 
 export async function createAccessItemAction(formData: FormData) {
-  await requireAuth();
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
@@ -309,7 +343,7 @@ export async function createAccessItemAction(formData: FormData) {
 
   if (!projectId || !name) throw new Error("Name is required");
 
-  await createAccessItem({ projectId, name, url, role, instructions, username, password });
+  await createAccessItem({ organizationId, projectId, name, url, role, instructions, username, password });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
@@ -323,11 +357,12 @@ export async function createAccessItemAction(formData: FormData) {
  * if the technology had been selected at project creation.
  */
 export async function quickAddAccessItemAction(projectId: string, presetName: string) {
-  await requireAuth();
+  const { organizationId } = await requireAuth();
   const preset = ALL_ACCESS_ITEM_PRESETS.find((p) => p.name === presetName);
   if (!preset) throw new Error("Unknown platform preset");
 
   await createAccessItem({
+    organizationId,
     projectId,
     name: preset.name,
     role: preset.defaultRole,
@@ -339,14 +374,14 @@ export async function quickAddAccessItemAction(projectId: string, presetName: st
 }
 
 export async function updateAccessItemStatusAction(accessItemId: string, projectId: string, status: string) {
-  await requireAuth();
-  await updateAccessItem(accessItemId, { status });
+  const { organizationId } = await requireAuth();
+  await updateAccessItem(accessItemId, organizationId, { status });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
 
 export async function updateAccessItemDetailsAction(formData: FormData) {
-  await requireAuth();
+  const { organizationId } = await requireAuth();
   const accessItemId = String(formData.get("accessItemId") ?? "");
   const projectId = String(formData.get("projectId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -356,20 +391,20 @@ export async function updateAccessItemDetailsAction(formData: FormData) {
 
   if (!accessItemId || !name) throw new Error("Missing access item or name");
 
-  await updateAccessItem(accessItemId, { name, url: url || null, role: role || null, instructions: instructions || null });
+  await updateAccessItem(accessItemId, organizationId, { name, url: url || null, role: role || null, instructions: instructions || null });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
 
 export async function clearAccessItemCredentialsAction(accessItemId: string, projectId: string) {
-  await requireAuth();
-  await clearAccessItemCredentials(accessItemId);
+  const { organizationId } = await requireAuth();
+  await clearAccessItemCredentials(accessItemId, organizationId);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
 
 export async function setAccessItemCredentialsAction(formData: FormData) {
-  await requireAuth();
+  const { organizationId } = await requireAuth();
   const accessItemId = String(formData.get("accessItemId") ?? "");
   const projectId = String(formData.get("projectId") ?? "");
   const username = String(formData.get("username") ?? "").trim();
@@ -377,7 +412,7 @@ export async function setAccessItemCredentialsAction(formData: FormData) {
 
   if (!accessItemId) throw new Error("Missing access item");
 
-  await setAccessItemCredentials(accessItemId, { username, password: password || undefined });
+  await setAccessItemCredentials(accessItemId, organizationId, { username, password: password || undefined });
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }
@@ -389,13 +424,13 @@ export async function setAccessItemCredentialsAction(formData: FormData) {
  * only action that actually returns a plaintext password.
  */
 export async function revealAccessItemPasswordAction(accessItemId: string): Promise<string | null> {
-  await requireAuth();
-  return revealAccessItemPassword(accessItemId);
+  const { organizationId } = await requireAuth();
+  return revealAccessItemPassword(accessItemId, organizationId);
 }
 
 export async function deleteAccessItemAction(accessItemId: string) {
-  await requireAuth();
-  const projectId = await deleteAccessItem(accessItemId);
+  const { organizationId } = await requireAuth();
+  const projectId = await deleteAccessItem(accessItemId, organizationId);
   if (projectId) {
     revalidatePath(`/projects/${projectId}`);
     revalidatePath("/dashboard");
@@ -407,7 +442,8 @@ export async function searchAction(query: string): Promise<SearchResult[]> {
 }
 
 export async function bulkUpdateTaskStatusAction(taskIds: string[], status: string) {
-  const projectIds = await bulkUpdateTaskStatus(taskIds, status);
+  const { organizationId } = await requireAuth();
+  const projectIds = await bulkUpdateTaskStatus(taskIds, organizationId, status);
   for (const id of projectIds) revalidatePath(`/projects/${id}`);
   revalidatePath("/tasks");
   revalidatePath("/today");
@@ -415,6 +451,7 @@ export async function bulkUpdateTaskStatusAction(taskIds: string[], status: stri
 }
 
 export async function createMaintenancePlanAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const cadenceDays = Number(formData.get("cadenceDays") ?? 30);
@@ -424,7 +461,7 @@ export async function createMaintenancePlanAction(formData: FormData) {
     throw new Error("Project, name, and checklist are required");
   }
 
-  await createMaintenancePlan({ projectId, name, cadenceDays, checklistTemplate });
+  await createMaintenancePlan({ organizationId, projectId, name, cadenceDays, checklistTemplate });
   revalidatePath("/maintenance");
   revalidatePath("/dashboard");
 }
@@ -433,80 +470,94 @@ export async function updateMaintenancePlanAction(
   planId: string,
   input: { isActive?: boolean; isPaid?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
 ) {
-  await updateMaintenancePlan(planId, input);
+  const { organizationId } = await requireAuth();
+  await updateMaintenancePlan(planId, organizationId, input);
   revalidatePath("/maintenance");
   revalidatePath("/dashboard");
 }
 
 export async function deleteMaintenancePlanAction(planId: string) {
-  await deleteMaintenancePlan(planId);
+  const { organizationId } = await requireAuth();
+  await deleteMaintenancePlan(planId, organizationId);
   revalidatePath("/maintenance");
   revalidatePath("/dashboard");
 }
 
 export async function generateMaintenanceRunAction(planId: string) {
-  const projectId = await generateMaintenanceRun(planId);
+  const { organizationId } = await requireAuth();
+  const projectId = await generateMaintenanceRun(planId, organizationId);
   revalidatePath("/maintenance");
   revalidatePath("/dashboard");
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function generateHandoffLinkAction(projectId: string) {
-  const token = await generateHandoffLink(projectId);
+  const { organizationId } = await requireAuth();
+  const token = await generateHandoffLink(projectId, organizationId);
   revalidatePath(`/projects/${projectId}`);
   return token;
 }
 
 export async function revokeHandoffLinkAction(projectId: string) {
-  await revokeHandoffLink(projectId);
+  const { organizationId } = await requireAuth();
+  await revokeHandoffLink(projectId, organizationId);
   revalidatePath(`/projects/${projectId}`);
 }
 
 // ---------------------------------------------------------------------------
-// Client Portal — one client-level link giving a client a dashboard of
-// every project they have (distinct from the per-project handoff link
-// above, which stays as a separate, still-useful read-only summary link).
+// Client Workspace — a real client login (distinct from the per-project
+// handoff link above, which stays as a separate, still-useful read-only
+// summary link that needs no account at all).
 // ---------------------------------------------------------------------------
 
-export async function generateClientPortalLinkAction(clientId: string) {
-  const token = await generateClientPortalLink(clientId);
+export async function generateClientInviteLinkAction(clientId: string) {
+  const { organizationId } = await requireAuth();
+  const token = await generateClientInviteLink(clientId, organizationId);
   revalidatePath(`/clients/${clientId}`);
   return token;
 }
 
-export async function revokeClientPortalLinkAction(clientId: string) {
-  await revokeClientPortalLink(clientId);
+export async function revokeClientInviteLinkAction(clientId: string) {
+  const { organizationId } = await requireAuth();
+  await revokeClientInviteLink(clientId, organizationId);
   revalidatePath(`/clients/${clientId}`);
 }
 
-// One reusable, agency-wide link — not per-client — that creates a new
+// One reusable link per organization — not per-client — that creates a new
 // client from whoever fills it out.
 export async function generateIntakeLinkAction() {
-  return generateIntakeToken();
+  const { organizationId } = await requireAuth();
+  return generateIntakeToken(organizationId);
 }
 
 export async function revokeIntakeLinkAction() {
-  await revokeIntakeToken();
+  const { organizationId } = await requireAuth();
+  await revokeIntakeToken(organizationId);
   revalidatePath("/clients");
 }
 
 /**
- * Public — no requireAuth(), gated purely by the agency-wide intake token
- * (same trust model as every handoff/portal token in this app: unguessable,
- * not a password). Always creates a new client; if a project type was
- * selected, also generates a real project via the same
- * createProjectWithWorkflow() the internal /projects/new wizard uses — the
- * workflow engine doesn't know or care whether the caller was Paul or a
- * client filling out intake.
+ * Public — no requireAuth(), gated purely by the per-organization intake
+ * token (same trust model as every handoff/portal token in this app:
+ * unguessable, not a password) — resolveIntakeToken() also tells us WHICH
+ * organization this submission belongs to, since intake links are no
+ * longer agency-wide-singular now that multiple organizations exist.
+ * Always creates a new client; if a project type was selected, also
+ * generates a real project via the same createProjectWithWorkflow() the
+ * internal /projects/new wizard uses — the workflow engine doesn't know or
+ * care whether the caller was Paul or a client filling out intake.
  */
 export async function submitIntakeAction(formData: FormData) {
   const token = String(formData.get("token") ?? "");
-  if (!(await isValidIntakeToken(token))) throw new Error("This intake link is no longer valid.");
+  const resolved = await resolveIntakeToken(token);
+  if (!resolved) throw new Error("This intake link is no longer valid.");
+  const { organizationId } = resolved;
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required");
 
-  const { client, portalToken } = await createClientViaIntake({
+  const { client, inviteToken } = await createClientViaIntake({
+    organizationId,
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
@@ -516,48 +567,100 @@ export async function submitIntakeAction(formData: FormData) {
   revalidatePath("/clients");
 
   const projectType = String(formData.get("projectType") ?? "");
-  let newProjectId: string | null = null;
   if (projectType && (PROJECT_TYPES as readonly string[]).includes(projectType)) {
     const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
     const technologyKeys = formData.getAll("technologies").map(String);
-    const project = await createProjectWithWorkflow({ clientId: client.id, name: projectName, projectType, technologyKeys });
-    newProjectId = project.id;
+    await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
   }
 
-  redirect(newProjectId ? `/portal/${portalToken}/projects/${newProjectId}` : `/portal/${portalToken}`);
+  // Not a login yet — the client still needs to set a password at this
+  // link before they can see their new workspace (see setClientPassword).
+  redirect(`/client-invite/${inviteToken}`);
 }
 
-/** Public — token resolves to a client, no requireAuth(). Updates the same fields the internal Clients page manages. */
+/** Public — no organization login involved. Sets the client session cookie on success; the invite-setup flow (setClientPasswordAction below) is what actually creates the password this checks against. */
+export async function clientLoginAction(formData: FormData) {
+  const loginSlug = String(formData.get("loginSlug") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+
+  const client = await verifyClientPassword(loginSlug, password);
+  const rateLimit = await checkClientLoginRateLimit(client?.id ?? loginSlug);
+  if (!rateLimit.allowed) redirect(`/client-login?error=rate_limited`);
+
+  await recordClientLoginAttempt(client?.id ?? null, !!client);
+  if (!client) redirect("/client-login?error=invalid");
+
+  const store = await cookies();
+  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(client.id), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  redirect("/portal");
+}
+
+export async function clientLogoutAction() {
+  const store = await cookies();
+  store.delete(CLIENT_SESSION_COOKIE_NAME);
+  redirect("/client-login");
+}
+
+/** Public — completes an invite (or password reset) link: sets loginSlug+password and logs the client straight in. */
+export async function setClientPasswordAction(formData: FormData) {
+  const inviteToken = String(formData.get("inviteToken") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
+  if (password.length < 8) redirect(`/client-invite/${inviteToken}?error=short_password`);
+  if (password !== passwordConfirm) redirect(`/client-invite/${inviteToken}?error=mismatch`);
+
+  const result = await setClientPassword(inviteToken, password);
+  if (!result) redirect("/client-login?error=invalid_invite");
+
+  const store = await cookies();
+  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(result.id), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  redirect("/portal");
+}
+
+/** Updates the same fields the internal Clients page manages. clientId comes from the client's own session, never request input. */
 export async function updateClientPortalInfoAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
-  const client = await getClientByPortalToken(token);
-  if (!client) throw new Error("This portal link is no longer valid.");
+  const { clientId } = await requireClientAuth();
+  const client = await getClientRecordForSelf(clientId);
+  if (!client?.organizationId) throw new Error("This client has no organization assigned yet.");
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required");
 
-  await updateClient(client.id, {
+  await updateClient(clientId, client.organizationId, {
     name,
     company: String(formData.get("company") ?? "") || undefined,
     contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
     contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
     address: String(formData.get("address") ?? "") || undefined,
   });
-  revalidatePath(`/portal/${token}`);
+  revalidatePath("/portal");
 }
 
 /**
- * Public. Re-derives the client from `token` and verifies the project
- * belongs to them via getClientProjectPortalDetail's own ownership check —
- * never trusts `projectId` from the form alone.
+ * Verifies the project belongs to the logged-in client via
+ * verifyClientOwnsProjectBySession — never trusts `projectId` from the
+ * form alone.
  */
 export async function postClientCommentAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!body) throw new Error("Comment can't be empty");
 
-  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath here: PortalComments already refetches this thread
   // itself right after this action resolves. Calling revalidatePath on the
@@ -567,83 +670,108 @@ export async function postClientCommentAction(formData: FormData) {
   // this had one) as part of this single response — confirmed as the real
   // cause of repeated "wave 1 timed out" crashes in production, triggered
   // by ordinary chat use, not page load.
-  await postProjectMessage(projectId, CLIENT_ACTOR_NAME, body);
+  await postProjectMessage(projectId, orgId, CLIENT_ACTOR_NAME, body);
+}
+
+/**
+ * The Client Workspace's "Review" button. Re-verifies ownership via the
+ * session (never trusts projectId/taskId from the form alone) and
+ * markClientActionTaskDone() itself re-checks the task is a real client
+ * action before writing, so a crafted request can't mark arbitrary work
+ * done through this path.
+ */
+export async function markClientActionDoneAction(formData: FormData) {
+  const { clientId } = await requireClientAuth();
+  const projectId = String(formData.get("projectId") ?? "");
+  const taskId = String(formData.get("taskId") ?? "");
+
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
+
+  await markClientActionTaskDone(taskId, projectId, orgId);
+  revalidatePath("/portal");
 }
 
 export async function uploadClientProjectFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("Missing file");
 
-  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
-  await uploadProjectAttachment(projectId, file, { fromClient: true });
+  await uploadProjectAttachment(projectId, orgId, file, { fromClient: true });
 }
 
 /**
- * Public — deletes a file for real, same as the internal Files tab's
- * delete. Deliberately doesn't take a `projectId` from the form; it
- * resolves the attachment's real project itself and checks that against
- * the token, so a client can never delete a file by guessing an id that
- * happens to belong to a different project.
+ * Deletes a file for real, same as the internal Files tab's delete.
+ * Deliberately doesn't take a `projectId` from the form; it resolves the
+ * attachment's real project itself and checks that against the session, so
+ * a client can never delete a file by guessing an id that happens to
+ * belong to a different project.
  */
 export async function deleteClientFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const attachmentId = String(formData.get("attachmentId") ?? "");
 
   const attachmentProjectId = await getAttachmentProjectId(attachmentId);
   // Already gone (a race between this and a poll refetch) is not an error —
   // the end state the caller wants (this file gone) is already true.
   if (!attachmentProjectId) return;
-  if (!(await verifyClientOwnsProject(token, attachmentProjectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, attachmentProjectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalFiles/FilesTab already poll/refetch on their own.
-  await removeTaskAttachment(attachmentId);
+  await removeTaskAttachment(attachmentId, orgId);
 }
 
-/** Public — uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
+/** Uploads a file as its own chat message rather than attaching it to whatever's currently typed, so a failed upload never loses draft text. */
 export async function uploadClientChatFileAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("Missing file");
 
-  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
-  const message = await postProjectMessage(projectId, CLIENT_ACTOR_NAME, file.name);
-  await uploadMessageAttachment(projectId, message.id, file, { fromClient: true });
+  const message = await postProjectMessage(projectId, orgId, CLIENT_ACTOR_NAME, file.name);
+  await uploadMessageAttachment(projectId, orgId, message.id, file, { fromClient: true });
 }
 
-/** Public — a client may only delete their own messages, never Paul's. */
+/** A client may only delete their own messages, never Paul's. */
 export async function deleteClientMessageAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const messageId = String(formData.get("messageId") ?? "");
 
   const message = await getMessageOwnership(messageId);
   if (!message) return; // Already deleted — nothing to do.
   if (message.authorName !== CLIENT_ACTOR_NAME) throw new Error("Can't delete this message.");
-  if (!(await verifyClientOwnsProject(token, message.projectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, message.projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — PortalComments/MessagesTab already poll/refetch on their own.
-  await deleteProjectMessage(messageId);
+  await deleteProjectMessage(messageId, orgId);
 }
 
-/** Public — wipes the entire thread for this project, both authors' messages. */
+/** Wipes the entire thread for this project, both authors' messages. */
 export async function deleteAllClientMessagesAction(formData: FormData) {
-  const token = String(formData.get("token") ?? "");
+  const { clientId } = await requireClientAuth();
   const projectId = String(formData.get("projectId") ?? "");
 
-  if (!(await verifyClientOwnsProject(token, projectId))) throw new Error("This link is no longer valid for that project.");
+  const orgId = await verifyClientOwnsProjectBySession(clientId, projectId);
+  if (!orgId) throw new Error("You don't have access to that project.");
 
   // No revalidatePath — the caller already clears its own local state optimistically.
-  await deleteAllProjectMessages(projectId);
+  await deleteAllProjectMessages(projectId, orgId);
 }
 
 /** Internal — Paul's reply from the project page's Messages tab. */
 export async function postProjectMessageAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!projectId || !body) throw new Error("Message can't be empty");
@@ -654,32 +782,35 @@ export async function postProjectMessageAction(formData: FormData) {
   // heavy query in getProjectDetail on top of sending one chat message,
   // which was the real, confirmed cause of repeated production timeouts
   // ("wave 1 timed out") triggered by ordinary chat use, not page load.
-  await postProjectMessage(projectId, AGENCY_OWNER_NAME, body);
+  await postProjectMessage(projectId, organizationId, AGENCY_OWNER_NAME, body);
 }
 
 /** Internal — uploads a file as its own chat message rather than attaching it to whatever's currently typed. */
 export async function uploadChatFileAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
   if (!projectId || !(file instanceof File)) throw new Error("Missing project or file");
 
   // No revalidatePath — MessagesTab already polls/refetches on its own.
-  const message = await postProjectMessage(projectId, AGENCY_OWNER_NAME, file.name);
-  await uploadMessageAttachment(projectId, message.id, file);
+  const message = await postProjectMessage(projectId, organizationId, AGENCY_OWNER_NAME, file.name);
+  await uploadMessageAttachment(projectId, organizationId, message.id, file);
 }
 
 /** Internal — Paul can delete any message, not just his own (he owns the record). */
 export async function deleteProjectMessageAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const messageId = String(formData.get("messageId") ?? "");
   const message = await getMessageOwnership(messageId);
   if (!message) return; // Already deleted — nothing to do.
   // No revalidatePath — MessagesTab already polls/refetches on its own.
-  await deleteProjectMessage(messageId);
+  await deleteProjectMessage(messageId, organizationId);
 }
 
 export async function deleteAllProjectMessagesAction(projectId: string) {
+  const { organizationId } = await requireAuth();
   // No revalidatePath — the caller already clears its own local state optimistically.
-  await deleteAllProjectMessages(projectId);
+  await deleteAllProjectMessages(projectId, organizationId);
 }
 
 /**
@@ -689,6 +820,7 @@ export async function deleteAllProjectMessagesAction(projectId: string) {
  * arbitrary user-supplied binary content.
  */
 export async function uploadTaskAttachmentAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const taskId = String(formData.get("taskId") ?? "");
   const file = formData.get("file");
 
@@ -696,11 +828,12 @@ export async function uploadTaskAttachmentAction(formData: FormData) {
     throw new Error("Missing task or file");
   }
 
-  const projectId = await uploadTaskAttachment(taskId, file);
+  const projectId = await uploadTaskAttachment(taskId, organizationId, file);
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function uploadProjectFileAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
   const projectId = String(formData.get("projectId") ?? "");
   const file = formData.get("file");
 
@@ -709,11 +842,12 @@ export async function uploadProjectFileAction(formData: FormData) {
   }
 
   // No revalidatePath — FilesTab already refetches on its own right after this.
-  await uploadProjectAttachment(projectId, file);
+  await uploadProjectAttachment(projectId, organizationId, file);
 }
 
 export async function updateProjectNotesAction(projectId: string, notes: string) {
-  await updateProjectNotes(projectId, notes || null);
+  const { organizationId } = await requireAuth();
+  await updateProjectNotes(projectId, organizationId, notes || null);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
 }

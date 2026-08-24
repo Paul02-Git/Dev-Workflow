@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db/client";
 import { activityLogs, attachments, tasks } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
 
 // Service-role client, server-only — bypasses RLS by design so uploads work
@@ -24,8 +24,11 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
 }
 
-async function getTaskProjectId(taskId: string) {
-  const [row] = await db.select({ projectId: tasks.projectId }).from(tasks).where(eq(tasks.id, taskId));
+async function getTaskProjectId(taskId: string, organizationId: string) {
+  const [row] = await db
+    .select({ projectId: tasks.projectId })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId)));
   return row?.projectId ?? null;
 }
 
@@ -54,10 +57,10 @@ async function validateAndUpload(file: File, pathPrefix: string): Promise<string
 }
 
 /** Uploads a task attachment (screenshot, PDF, etc.) and records it. */
-export async function uploadTaskAttachment(taskId: string, file: File): Promise<string | null> {
+export async function uploadTaskAttachment(taskId: string, organizationId: string, file: File): Promise<string | null> {
   const path = await validateAndUpload(file, taskId);
-  await db.insert(attachments).values({ taskId, storagePath: path, label: file.name, fileSize: file.size });
-  return getTaskProjectId(taskId);
+  await db.insert(attachments).values({ organizationId, taskId, storagePath: path, label: file.name, fileSize: file.size });
+  return getTaskProjectId(taskId, organizationId);
 }
 
 /**
@@ -69,15 +72,17 @@ export async function uploadTaskAttachment(taskId: string, file: File): Promise<
  */
 export async function uploadProjectAttachment(
   projectId: string,
+  organizationId: string,
   file: File,
   opts?: { fromClient?: boolean }
 ): Promise<void> {
   const path = await validateAndUpload(file, `project-${projectId}`);
   await db
     .insert(attachments)
-    .values({ projectId, storagePath: path, label: file.name, fileSize: file.size, uploadedByClient: !!opts?.fromClient });
+    .values({ organizationId, projectId, storagePath: path, label: file.name, fileSize: file.size, uploadedByClient: !!opts?.fromClient });
   if (opts?.fromClient) {
     await db.insert(activityLogs).values({
+      organizationId,
       projectId,
       action: "client_file_uploaded",
       detail: file.name,
@@ -97,12 +102,14 @@ export async function uploadProjectAttachment(
  */
 export async function uploadMessageAttachment(
   projectId: string,
+  organizationId: string,
   messageId: string,
   file: File,
   opts?: { fromClient?: boolean }
 ): Promise<void> {
   const path = await validateAndUpload(file, `project-${projectId}`);
   await db.insert(attachments).values({
+    organizationId,
     projectId,
     messageId,
     storagePath: path,
@@ -134,8 +141,11 @@ export async function deleteStorageObjects(paths: string[]): Promise<void> {
  * deleted (best-effort) so replacing a file repeatedly doesn't leave
  * orphaned copies behind in the bucket.
  */
-export async function replaceAttachment(attachmentId: string, file: File): Promise<string | null> {
-  const [existing] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+export async function replaceAttachment(attachmentId: string, organizationId: string, file: File): Promise<string | null> {
+  const [existing] = await db
+    .select()
+    .from(attachments)
+    .where(and(eq(attachments.id, attachmentId), eq(attachments.organizationId, organizationId)));
   if (!existing) throw new Error("Attachment not found");
 
   const pathPrefix = existing.taskId ? existing.taskId : `project-${existing.projectId}`;
@@ -151,7 +161,7 @@ export async function replaceAttachment(attachmentId: string, file: File): Promi
     .where(eq(attachments.id, attachmentId));
 
   if (existing.projectId) return existing.projectId;
-  return existing.taskId ? getTaskProjectId(existing.taskId) : null;
+  return existing.taskId ? getTaskProjectId(existing.taskId, organizationId) : null;
 }
 
 /**

@@ -3,16 +3,28 @@
 // mark tasks done in dependency order, confirm Blocked status clears,
 // confirm health % moves, and confirm Check Project fires the documented
 // example scenarios.
+import { db } from "@/db/client";
+import { organizations } from "@/db/schema";
+import { hashPassword } from "@/lib/auth";
 import { createClient } from "@/lib/queries/clients";
 import { createProjectWithWorkflow, getProjectDetail, updateTaskStatus, getProjectIssues } from "@/lib/queries/projects";
 
 async function main() {
-  console.log("--- Creating client ---");
-  const client = await createClient({ name: "Smoke Test Co" });
+  console.log("--- Creating test organization ---");
+  const [org] = await db
+    .insert(organizations)
+    .values({ name: "Smoke Test Org", slug: `smoke-test-${Date.now()}`, passwordHash: hashPassword("smoke-test-password") })
+    .returning();
+  const organizationId = org.id;
+  console.log("organization:", organizationId);
+
+  console.log("\n--- Creating client ---");
+  const client = await createClient({ organizationId, name: "Smoke Test Co" });
   console.log("client:", client.id);
 
   console.log("\n--- Creating WordPress + Elementor + GA4 + GSC + Clarity project ---");
   const project = await createProjectWithWorkflow({
+    organizationId,
     clientId: client.id,
     name: "Smoke Test — WP Site",
     projectType: "WordPress Website",
@@ -20,7 +32,7 @@ async function main() {
   });
   console.log("project:", project.id);
 
-  let detail = await getProjectDetail(project.id);
+  let detail = await getProjectDetail(project.id, organizationId);
   if (!detail) throw new Error("project detail missing");
   console.log(`stages: ${detail.stages.length}, tasks: ${detail.tasks.length}`);
   console.log("initial health:", detail.healthScore);
@@ -33,36 +45,37 @@ async function main() {
 
   // Complete the dependency chain: access.hosting -> access.wp_admin -> wp.install
   const hosting = detail.tasks.find((t) => t.canonicalKey === "access.hosting")!;
-  await updateTaskStatus(hosting.id, "DONE");
-  await updateTaskStatus(wpAdmin[0].id, "DONE");
+  await updateTaskStatus(hosting.id, organizationId, "DONE");
+  await updateTaskStatus(wpAdmin[0].id, organizationId, "DONE");
 
-  detail = await getProjectDetail(project.id);
+  detail = await getProjectDetail(project.id, organizationId);
   const installAfter = detail!.tasks.find((t) => t.canonicalKey === "wp.install")!;
   console.log(`wp.install effective status after deps done (should be TODO): ${installAfter.effectiveStatus}`);
 
-  await updateTaskStatus(installAfter.id, "DONE");
+  await updateTaskStatus(installAfter.id, organizationId, "DONE");
 
   console.log("\n--- Check Project (before verifying GA4 conversions) ---");
   const ga4Install = detail!.tasks.find((t) => t.canonicalKey === "analytics.ga4.install")!;
   const gtmContainer = detail!.tasks.find((t) => t.canonicalKey === "tracking.gtm.container_installed")!;
-  await updateTaskStatus(gtmContainer.id, "DONE");
-  await updateTaskStatus(ga4Install.id, "DONE");
+  await updateTaskStatus(gtmContainer.id, organizationId, "DONE");
+  await updateTaskStatus(ga4Install.id, organizationId, "DONE");
 
-  const issuesBefore = await getProjectIssues(project.id);
+  const issuesBefore = await getProjectIssues(project.id, organizationId);
   console.log(`issues found: ${issuesBefore.length}`);
   issuesBefore.forEach((i) => console.log(`  - [${i.area}] ${i.message}`));
 
-  detail = await getProjectDetail(project.id);
+  detail = await getProjectDetail(project.id, organizationId);
   console.log("\nhealth after some progress:", detail!.healthScore);
 
   console.log("\n--- Shopify + Klaviyo project (different tech combo) ---");
   const project2 = await createProjectWithWorkflow({
+    organizationId,
     clientId: client.id,
     name: "Smoke Test — Shopify Store",
     projectType: "Shopify Store",
     technologyKeys: ["shopify", "klaviyo"],
   });
-  const detail2 = await getProjectDetail(project2.id);
+  const detail2 = await getProjectDetail(project2.id, organizationId);
   console.log(`shopify+klaviyo stages: ${detail2!.stages.map((s) => s.key).join(", ")}`);
   console.log(`shopify+klaviyo task count: ${detail2!.tasks.length}`);
 

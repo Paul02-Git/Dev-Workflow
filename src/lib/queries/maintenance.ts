@@ -27,7 +27,7 @@ export const DEFAULT_MAINTENANCE_CHECKLIST = [
   "Send client a short status update",
 ].join("\n");
 
-export async function listMaintenancePlans() {
+export async function listMaintenancePlans(organizationId: string) {
   return db
     .select({
       id: maintenancePlans.id,
@@ -46,18 +46,19 @@ export async function listMaintenancePlans() {
     .from(maintenancePlans)
     .innerJoin(projects, eq(maintenancePlans.projectId, projects.id))
     .innerJoin(clients, eq(projects.clientId, clients.id))
+    .where(eq(maintenancePlans.organizationId, organizationId))
     .orderBy(maintenancePlans.nextDueAt);
 }
 
 /** Active plans whose next cycle is due today or earlier — the dashboard's "Maintenance due" list. */
-export async function listDueMaintenancePlans() {
-  const all = await listMaintenancePlans();
+export async function listDueMaintenancePlans(organizationId: string) {
+  const all = await listMaintenancePlans(organizationId);
   const now = new Date();
   return all.filter((p) => p.isActive && new Date(p.nextDueAt) <= now);
 }
 
 /** This project's maintenance plans only — backs the per-project Settings tab. */
-export async function listMaintenancePlansForProject(projectId: string) {
+export async function listMaintenancePlansForProject(projectId: string, organizationId: string) {
   return db
     .select({
       id: maintenancePlans.id,
@@ -75,11 +76,12 @@ export async function listMaintenancePlansForProject(projectId: string) {
     .from(maintenancePlans)
     .innerJoin(projects, eq(maintenancePlans.projectId, projects.id))
     .innerJoin(clients, eq(projects.clientId, clients.id))
-    .where(eq(maintenancePlans.projectId, projectId))
+    .where(and(eq(maintenancePlans.projectId, projectId), eq(maintenancePlans.organizationId, organizationId)))
     .orderBy(maintenancePlans.nextDueAt);
 }
 
 export async function createMaintenancePlan(input: {
+  organizationId: string;
   projectId: string;
   name: string;
   cadenceDays: number;
@@ -88,6 +90,7 @@ export async function createMaintenancePlan(input: {
   const [plan] = await db
     .insert(maintenancePlans)
     .values({
+      organizationId: input.organizationId,
       projectId: input.projectId,
       name: input.name,
       cadenceDays: input.cadenceDays,
@@ -100,12 +103,13 @@ export async function createMaintenancePlan(input: {
 
 export async function updateMaintenancePlan(
   planId: string,
+  organizationId: string,
   input: { isActive?: boolean; isPaid?: boolean; cadenceDays?: number; checklistTemplate?: string; name?: string }
 ) {
   await db
     .update(maintenancePlans)
     .set({ ...input, updatedAt: new Date() })
-    .where(eq(maintenancePlans.id, planId));
+    .where(and(eq(maintenancePlans.id, planId), eq(maintenancePlans.organizationId, organizationId)));
 }
 
 /**
@@ -116,11 +120,11 @@ export async function updateMaintenancePlan(
  * unlinked, ordinary task) as a historical record that the work actually
  * happened, rather than being silently erased along with the plan.
  */
-export async function deleteMaintenancePlan(planId: string) {
+export async function deleteMaintenancePlan(planId: string, organizationId: string) {
   await db
     .delete(tasks)
     .where(and(eq(tasks.maintenancePlanId, planId), ne(tasks.status, "DONE"), ne(tasks.status, "SKIPPED")));
-  await db.delete(maintenancePlans).where(eq(maintenancePlans.id, planId));
+  await db.delete(maintenancePlans).where(and(eq(maintenancePlans.id, planId), eq(maintenancePlans.organizationId, organizationId)));
 }
 
 /**
@@ -137,8 +141,11 @@ export async function deleteMaintenancePlan(planId: string) {
  * previous due date) so a plan that sat overdue for a while doesn't come
  * back due again immediately.
  */
-export async function generateMaintenanceRun(planId: string): Promise<string | null> {
-  const [plan] = await db.select().from(maintenancePlans).where(eq(maintenancePlans.id, planId));
+export async function generateMaintenanceRun(planId: string, organizationId: string): Promise<string | null> {
+  const [plan] = await db
+    .select()
+    .from(maintenancePlans)
+    .where(and(eq(maintenancePlans.id, planId), eq(maintenancePlans.organizationId, organizationId)));
   if (!plan) return null;
 
   const [stage] = await db.select().from(stages).where(eq(stages.key, MAINTENANCE_STAGE_KEY));
@@ -155,6 +162,7 @@ export async function generateMaintenanceRun(planId: string): Promise<string | n
       .from(projectStages)
       .where(eq(projectStages.projectId, plan.projectId));
     await db.insert(projectStages).values({
+      organizationId,
       projectId: plan.projectId,
       stageId: stage.id,
       sortOrder: maxSort + 1,
@@ -201,6 +209,7 @@ export async function generateMaintenanceRun(planId: string): Promise<string | n
       .insert(tasks)
       .values(
         newTitles.map((title, i) => ({
+          organizationId,
           projectId: plan.projectId,
           stageId: stage.id,
           maintenancePlanId: planId,
@@ -217,13 +226,14 @@ export async function generateMaintenanceRun(planId: string): Promise<string | n
     // dated tag would just go stale the moment it rolled into a later cycle.
     const [maintenanceTag] = await db
       .insert(tags)
-      .values({ name: "maintenance" })
+      .values({ organizationId, name: "maintenance" })
       .onConflictDoUpdate({ target: tags.name, set: { name: "maintenance" } })
       .returning();
-    await db.insert(taskTags).values(insertedTasks.map((t) => ({ taskId: t.id, tagId: maintenanceTag.id })));
+    await db.insert(taskTags).values(insertedTasks.map((t) => ({ organizationId, taskId: t.id, tagId: maintenanceTag.id })));
   }
 
   await db.insert(activityLogs).values({
+    organizationId,
     projectId: plan.projectId,
     action: "maintenance_run_generated",
     detail: `${plan.name}: ${resetIds.length} task(s) reset, ${newTitles.length} new — due ${nextDue.toLocaleDateString()}`,

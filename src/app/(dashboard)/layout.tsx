@@ -6,6 +6,8 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
+import { requireAuth } from "@/lib/auth";
+import { isPlatformAdminOrg } from "@/lib/queries/organizations";
 
 // Every page in this group needs live, authenticated, per-request data —
 // there's no meaningful static version of a client's task board. Without
@@ -31,16 +33,29 @@ const NAV = [
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { organizationId } = await requireAuth();
+
   // This runs on every page in the app, so it must never be able to take
   // the whole layout down — timeout-protected, and any failure (timeout or
   // otherwise) falls back to an empty switcher instead of throwing, since
   // a missing dropdown is a much smaller problem than every page crashing.
   let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
   try {
-    switcherProjects = await withTimeout(listProjectsForSwitcher(), 5000, "project switcher");
+    switcherProjects = await withTimeout(listProjectsForSwitcher(organizationId), 5000, "project switcher");
   } catch {
     // swallow — empty switcher is an acceptable degraded state
   }
+
+  // Shows the Admin link only for the platform-owner organization — every
+  // /admin page/action re-checks this itself (requirePlatformAdmin), so
+  // this is purely cosmetic, not the actual security boundary.
+  let showAdminNav = false;
+  try {
+    showAdminNav = await withTimeout(isPlatformAdminOrg(organizationId), 5000, "platform admin check");
+  } catch {
+    // swallow — worst case, the nav link is briefly missing, not a security issue
+  }
+  const nav = showAdminNav ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -62,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mb-4">
           <ProjectSwitcher projects={switcherProjects} />
         </div>
-        <SidebarNav items={NAV} />
+        <SidebarNav items={nav} />
         <div className="mt-4 border-t border-border pt-3">
           <SearchTrigger />
           <form action={logoutAction}>

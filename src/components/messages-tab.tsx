@@ -167,7 +167,7 @@ export function MessagesTab({ projectId, messages }: { projectId: string; messag
                     <span className="shrink-0 text-muted-foreground">{formatFileSize(m.attachment.fileSize)}</span>
                   </a>
                 ) : (
-                  <p className="mt-0.5 text-sm">{m.body}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">{m.body}</p>
                 )}
               </div>
               <button

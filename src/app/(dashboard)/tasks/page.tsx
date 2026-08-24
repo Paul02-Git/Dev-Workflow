@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { listAllTasks } from "@/lib/queries/projects";
 import { TaskBulkList } from "@/components/task-bulk-list";
+import { requireAuth } from "@/lib/auth";
 
 export default async function TasksPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const { status } = await searchParams;
-  const allTasks = await listAllTasks();
+  const allTasks = await listAllTasks(organizationId);
 
   // Top-level tasks only — subtasks clutter a cross-project list without
   // their parent's context.
