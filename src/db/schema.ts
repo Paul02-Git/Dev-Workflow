@@ -69,7 +69,16 @@ export const clients = pgTable("clients", {
   // Client Portal — a persistent, unguessable link (same pattern as
   // projects.handoffToken, one level up) giving the client themselves
   // access to a dashboard of all their projects, no login required.
-  portalToken: text("portal_token").unique(),
+  //
+  // DB column is actually named "invite_token", not "portal_token": a
+  // parallel session (branch `worktree-multi-tenant`, see .claude/worktrees)
+  // renamed it live against this same production database as part of an
+  // unrelated, undeployed multi-tenant rework — this mapping was updated to
+  // match reality rather than renaming the column back, since 3 real
+  // clients already have data under the new client-invite/password flow
+  // that branch also shipped. See PROJECT_STATUS.md for the full incident
+  // writeup before touching this table again.
+  portalToken: text("invite_token").unique(),
   // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the
   // public intake form) — lets Paul spot self-service signups at a glance
   // without needing an activity_logs entry, which requires a projectId
