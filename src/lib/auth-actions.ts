@@ -12,18 +12,18 @@ import {
   checkLoginRateLimit,
   recordLoginAttempt,
 } from "@/lib/auth";
-import { createOrganization, normalizeSlug } from "@/lib/queries/organizations";
+import { createOrganizationFromEmail } from "@/lib/queries/organizations";
 
 export async function loginAction(formData: FormData) {
-  const slug = String(formData.get("organization") ?? "").trim().toLowerCase();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
 
   // Resolved before rate-limiting/verification so both are scoped to the
-  // right organization — an unknown slug still gets recorded (organizationId
-  // null) so slug-guessing itself is rate-limited, just not attributable to
+  // right organization — an unknown email still gets recorded (organizationId
+  // null) so email-guessing itself is rate-limited, just not attributable to
   // a real org's own lockout window.
-  const [org] = slug
-    ? await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.slug, slug))
+  const [org] = email
+    ? await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.email, email))
     : [];
 
   if (org) {
@@ -35,11 +35,19 @@ export async function loginAction(formData: FormData) {
     }
   }
 
-  const verified = slug ? await verifyOrganizationPassword(slug, password) : null;
+  const verified = email ? await verifyOrganizationPassword(email, password) : null;
   await recordLoginAttempt(org?.id ?? null, !!verified);
 
   if (!verified) {
     redirect("/login?error=1");
+  }
+
+  // Correct credentials for a deactivated org — proving you know the
+  // password is proof of ownership, so it's safe (and much more helpful
+  // than a generic "wrong password") to send them straight to the
+  // deactivated-account explanation instead of logging them in.
+  if (verified.deletedAt) {
+    redirect("/account-deactivated");
   }
 
   const store = await cookies();
@@ -56,29 +64,33 @@ export async function loginAction(formData: FormData) {
 
 /**
  * Onboards a brand-new organization (agency) — everyone except Dovera,
- * which was migrated in directly. Starts completely empty (no clients/
- * projects), same shape any org would have right after this. Auto-logs
- * the new org in immediately, same as a successful loginAction, rather
- * than sending them to /login to type the password they just chose.
+ * which was migrated in directly. Just email + password: no separate
+ * agency-name field, matching login's own email-based identity (the org's
+ * display name/slug are auto-derived from the email — see
+ * createOrganizationFromEmail — and can be renamed later; nothing here
+ * requires the user to type or pick one up front). Starts completely
+ * empty (no clients/projects), same shape any org would have right after
+ * this. Auto-logs the new org in immediately, same as a successful
+ * loginAction, rather than sending them to /login to type the password
+ * they just chose.
  */
 export async function signupAction(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim();
-  const slugInput = String(formData.get("slug") ?? "");
+  const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
 
-  if (!name) redirect("/signup?error=invalid");
+  const back = (error: string) => redirect(`/signup?error=${error}&email=${encodeURIComponent(email)}`);
 
-  const slug = normalizeSlug(slugInput);
-  if (!slug) redirect("/signup?error=invalid");
-  if (password.length < 8) redirect("/signup?error=short_password");
-  if (password !== passwordConfirm) redirect("/signup?error=mismatch");
+  if (!email) back("invalid");
+  if (password.length < 8) back("short_password");
+  if (password !== passwordConfirm) back("mismatch");
 
   let org;
   try {
-    org = await createOrganization({ name, slug, password });
-  } catch {
-    redirect(`/signup?error=slug_taken&name=${encodeURIComponent(name)}`);
+    org = await createOrganizationFromEmail({ email, password });
+  } catch (err) {
+    if (err instanceof Error && err.message === "email_taken") back(err.message);
+    throw err; // unexpected — don't lie and call it an email conflict
   }
 
   const store = await cookies();

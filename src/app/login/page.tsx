@@ -1,6 +1,9 @@
-import Image from "next/image";
 import Link from "next/link";
 import { loginAction } from "@/lib/auth-actions";
+import { AuthCard } from "@/components/auth-card";
+import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default async function LoginPage({
   searchParams,
@@ -10,61 +13,54 @@ export default async function LoginPage({
   const { error, minutes } = await searchParams;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="app-card w-full max-w-sm rounded-xl border border-border bg-card p-6">
-        <div className="mb-2 flex flex-col items-center">
-          <Image src="/logo.png" alt="" width={80} height={80} loading="eager" className="shrink-0 rounded-md" />
-          <div className="text-lg font-semibold leading-tight">
-            DEV<span className="text-[#2a78d6]">OS</span>
-          </div>
-        </div>
-
-        <form action={loginAction} className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[#52514e]">Organization</label>
-            <input
-              type="text"
-              name="organization"
-              placeholder="your-agency-slug"
-              required
-              autoFocus
-              autoCapitalize="off"
-              autoCorrect="off"
-              className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[#52514e]">Password</label>
-            <input
-              type="password"
-              name="password"
-              required
-              className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
-            />
-          </div>
-          {error === "ratelimited" && (
-            <p className="text-xs font-medium text-[#d03b3b]">
-              Too many failed attempts. Try again in {minutes ?? "15"} minutes.
-            </p>
-          )}
-          {error === "1" && (
-            <p className="text-xs font-medium text-[#d03b3b]">Wrong organization or password. Try again.</p>
-          )}
-          <button
-            type="submit"
-            className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
-          >
-            Sign in
-          </button>
-        </form>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
+    <AuthCard
+      title="Welcome back"
+      subtitle="Sign in to continue"
+      googleHref="/api/auth/google/start"
+      footer={
+        <>
           New agency?{" "}
           <Link href="/signup" className="font-semibold text-primary hover:underline">
             Create an account
           </Link>
-        </p>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <form action={loginAction} className="space-y-3">
+        <Input
+          id="email"
+          type="email"
+          name="email"
+          placeholder="Email"
+          aria-label="Email"
+          required
+          autoFocus
+          autoCapitalize="off"
+          autoCorrect="off"
+        />
+        <Input id="password" type="password" name="password" placeholder="Password" aria-label="Password" required />
+        {error === "ratelimited" && (
+          <p className="text-xs font-medium text-[#d03b3b]">
+            Too many failed attempts. Try again in {minutes ?? "15"} minutes.
+          </p>
+        )}
+        {error === "1" && <p className="text-xs font-medium text-[#d03b3b]">Wrong email or password. Try again.</p>}
+        {error === "google_no_account" && (
+          <p className="text-xs font-medium text-[#d03b3b]">
+            No agency account is linked to that Google email yet. Sign in with your email and password, or{" "}
+            <Link href="/signup" className="underline">
+              create an account
+            </Link>
+            .
+          </p>
+        )}
+        {error === "google_failed" && (
+          <p className="text-xs font-medium text-[#d03b3b]">Google sign-in didn&apos;t go through. Please try again.</p>
+        )}
+        <button type="submit" className={cn(buttonVariants(), "w-full")}>
+          Sign in
+        </button>
+      </form>
+    </AuthCard>
   );
 }

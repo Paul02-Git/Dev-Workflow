@@ -129,9 +129,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       <div className="mb-6">
         <ClientPortalLinkPanel
           clientId={client.id}
-          inviteToken={client.inviteToken}
-          hasPassword={!!client.passwordHash}
-          loginSlug={client.loginSlug}
+          hasEmail={!!client.contactEmail}
           fileCount={clientFileCount}
           messageCount={clientMessageCount}
         />

@@ -1,10 +1,10 @@
 // Used to auto-fill "who to invite" in access-request instructions.
 export const AGENCY_EMAIL = "paul@doveraagency.com";
 
-// Single source of truth for "who did this" in activity logging. There's
-// no user-accounts table yet (this is a single shared-password app), so
-// every activity write passes one of these two plain name strings rather
-// than a userId — swapping in a real auth-derived name later is a
-// one-line change per call site, not a redesign.
-export const AGENCY_OWNER_NAME = "Paul";
+// The non-agency side of activity logging — a client's contactEmail isn't
+// always on file and clients don't have their own accounts, so this stays
+// a plain constant. The agency side used to be a matching hardcoded
+// constant here too, but now that multiple organizations exist it's
+// resolved dynamically per organization instead — see
+// getOrganizationActorName in src/lib/auth.ts.
 export const CLIENT_ACTOR_NAME = "Client";

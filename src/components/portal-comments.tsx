@@ -21,7 +21,7 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PortalComments({ projects }: { projects: ProjectThread[] }) {
+export function PortalComments({ projects, agencyName = "your agency" }: { projects: ProjectThread[]; agencyName?: string }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
@@ -83,7 +83,7 @@ export function PortalComments({ projects }: { projects: ProjectThread[] }) {
     return (
       <section className="flex h-[600px] min-w-0 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
         <h2 className="mb-1 text-sm font-bold">Comments</h2>
-        <p className="text-xs text-muted-foreground">You&apos;ll be able to message Paul here once your first project is set up.</p>
+        <p className="text-xs text-muted-foreground">You&apos;ll be able to message {agencyName} here once your first project is set up.</p>
       </section>
     );
   }
@@ -247,7 +247,7 @@ export function PortalComments({ projects }: { projects: ProjectThread[] }) {
             {uploading && <span className="text-xs">Uploading…</span>}
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">Paul usually replies within a day</span>
+            <span className="text-[11px] text-muted-foreground">{agencyName} usually replies within a day</span>
             <button
               type="button"
               disabled={pending || !draft.trim()}

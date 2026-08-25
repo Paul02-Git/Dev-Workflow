@@ -4,6 +4,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { SearchTrigger } from "@/components/search-trigger";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { LogoutButton } from "@/components/logout-button";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
 import { requireAuth } from "@/lib/auth";
@@ -58,8 +59,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const nav = showAdminNav ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="w-56 shrink-0 border-r border-border bg-card p-4">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside className="flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-4">
         <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
           <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
           <div>
@@ -80,17 +81,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <SidebarNav items={nav} />
         <div className="mt-4 border-t border-border pt-3">
           <SearchTrigger />
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
-            >
-              Log out
-            </button>
-          </form>
+          <LogoutButton
+            action={logoutAction}
+            triggerLabel="Log out"
+            triggerClassName="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
+          />
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-8">{children}</main>
+      <main className="h-screen min-w-0 flex-1 overflow-y-auto p-8">{children}</main>
       <CommandPalette />
     </div>
   );

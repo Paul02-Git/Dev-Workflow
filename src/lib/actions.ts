@@ -1,15 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import {
   createClient,
   updateClient,
   deleteClient,
   createClientViaIntake,
-  generateClientInviteLink,
+  generateClientMagicLink,
+  getClientForMagicLinkSend,
   revokeClientInviteLink,
   verifyClientOwnsProjectBySession,
-  setClientPassword,
+  getClientByContactEmail,
+  verifyClientMagicCode,
   getClientRecordForSelf,
 } from "@/lib/queries/clients";
 import { cookies } from "next/headers";
@@ -40,14 +43,16 @@ import {
 import {
   requireAuth,
   requireClientAuth,
-  makeClientSessionCookieValue,
   CLIENT_SESSION_COOKIE_NAME,
+  makeClientSessionCookieValue,
   checkClientLoginRateLimit,
   recordClientLoginAttempt,
-  verifyClientPassword,
+  getOrganizationActorName,
+  getOrganizationContactEmail,
 } from "@/lib/auth";
+import { sendEmail, renderClientMagicLinkEmail, renderClientMagicCodeEmail } from "@/lib/email";
 import { redirect } from "next/navigation";
-import { ALL_ACCESS_ITEM_PRESETS } from "@/data/access-item-presets";
+import { ALL_ACCESS_ITEM_PRESETS, resolvePresetInstructions } from "@/data/access-item-presets";
 import { searchAll, type SearchResult } from "@/lib/queries/search";
 import { bulkUpdateTaskStatus } from "@/lib/queries/projects";
 import {
@@ -73,9 +78,31 @@ import {
   replaceAttachment,
   getSignedAttachmentUrl,
 } from "@/lib/storage";
+import { requirePlatformAdmin, deleteOrganization, restoreOrganization, permanentlyDeleteOrganization } from "@/lib/queries/organizations";
 import { resolveIntakeToken, generateIntakeToken, revokeIntakeToken } from "@/lib/queries/agency-settings";
-import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
+import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { PROJECT_TYPES } from "@/data/project-types";
+import { headers } from "next/headers";
+
+/** Derives the app's own base URL from the incoming request's Host header — same "trust whatever host actually served the request" approach used for the Google OAuth redirect_uri, avoids needing a separate hardcoded env var for dev vs. prod. */
+async function getBaseUrl(): Promise<string> {
+  const h = await headers();
+  const host = h.get("host");
+  const protocol = process.env.NODE_ENV === "production" ? "https" : "http";
+  return `${protocol}://${host}`;
+}
+
+/** Shared by every place a client gets logged in from a Server Action (intake auto-login, the code-entry fallback) — the route handler consuming the link itself sets this same cookie independently, since NextResponse's cookie API differs from next/headers' cookies(). */
+async function setClientSession(clientId: string): Promise<void> {
+  const store = await cookies();
+  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(clientId), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+}
 
 // No redirect — this now opens from a modal on the clients list itself
 // (see CreateClientForm), so the useful outcome is the dialog closing and
@@ -361,12 +388,13 @@ export async function quickAddAccessItemAction(projectId: string, presetName: st
   const preset = ALL_ACCESS_ITEM_PRESETS.find((p) => p.name === presetName);
   if (!preset) throw new Error("Unknown platform preset");
 
+  const agencyEmail = await getOrganizationContactEmail(organizationId);
   await createAccessItem({
     organizationId,
     projectId,
     name: preset.name,
     role: preset.defaultRole,
-    instructions: preset.instructions,
+    instructions: resolvePresetInstructions(preset.instructions, agencyEmail),
     status: "NOT_REQUESTED",
   });
   revalidatePath(`/projects/${projectId}`);
@@ -510,9 +538,19 @@ export async function revokeHandoffLinkAction(projectId: string) {
 // summary link that needs no account at all).
 // ---------------------------------------------------------------------------
 
-export async function generateClientInviteLinkAction(clientId: string) {
+/** Agency-triggered "Send login link" — mints a fresh magic link and emails it immediately. Returns the token too so the panel can offer a "copy link" fallback for the same link, in case Paul would rather send it through his own channel. */
+export async function sendClientMagicLinkAction(clientId: string): Promise<string> {
   const { organizationId } = await requireAuth();
-  const token = await generateClientInviteLink(clientId, organizationId);
+  const client = await getClientForMagicLinkSend(clientId, organizationId);
+  if (!client) throw new Error("Client not found");
+
+  const { token } = await generateClientMagicLink(clientId, organizationId);
+  if (client.contactEmail) {
+    const baseUrl = await getBaseUrl();
+    const url = `${baseUrl}/api/client-magic/${token}`;
+    const { subject, html } = renderClientMagicLinkEmail({ clientName: client.name, url, isWelcome: false });
+    await sendEmail({ to: client.contactEmail, subject, html });
+  }
   revalidatePath(`/clients/${clientId}`);
   return token;
 }
@@ -555,49 +593,57 @@ export async function submitIntakeAction(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name is required");
+  const contactEmail = String(formData.get("contactEmail") ?? "").trim();
+  if (!contactEmail) throw new Error("Email is required — it's how we send you access to your workspace.");
 
-  const { client, inviteToken } = await createClientViaIntake({
+  const projectType = String(formData.get("projectType") ?? "");
+  if (!projectType || !(PROJECT_TYPES as readonly string[]).includes(projectType)) {
+    throw new Error("Please select what you need help with.");
+  }
+  const technologyKeys = formData.getAll("technologies").map(String);
+  if (technologyKeys.length === 0) throw new Error("Please select at least one service.");
+
+  const { client, magicLinkToken } = await createClientViaIntake({
     organizationId,
     name,
     company: String(formData.get("company") ?? "") || undefined,
-    contactEmail: String(formData.get("contactEmail") ?? "") || undefined,
+    contactEmail,
     contactPhone: String(formData.get("contactPhone") ?? "") || undefined,
     address: String(formData.get("address") ?? "") || undefined,
   });
   revalidatePath("/clients");
 
-  const projectType = String(formData.get("projectType") ?? "");
-  if (projectType && (PROJECT_TYPES as readonly string[]).includes(projectType)) {
-    const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
-    const technologyKeys = formData.getAll("technologies").map(String);
-    await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
+  const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
+  await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
+
+  // Submitting this form live, in this browser, is itself proof of
+  // presence — same reasoning signupAction uses to log an agency straight
+  // in rather than sending them to /login to type the password they just
+  // chose. No email round-trip to wait on for this first visit.
+  await setClientSession(client.id);
+
+  if (client.contactEmail) {
+    // The client record (and project, if any) are already committed, and
+    // they're already logged in via the session above — this email is
+    // purely their reference for coming back later, not something the
+    // response should wait on. after() runs it once the redirect below
+    // has already gone out, so landing in /portal isn't held up by a
+    // network round trip to Resend. Server Functions can still call
+    // headers() (via getBaseUrl) inside after() — see Next's own docs.
+    const contactEmail = client.contactEmail;
+    const clientName = client.name;
+    after(async () => {
+      try {
+        const baseUrl = await getBaseUrl();
+        const url = `${baseUrl}/api/client-magic/${magicLinkToken}`;
+        const { subject, html } = renderClientMagicLinkEmail({ clientName, url, isWelcome: true });
+        await sendEmail({ to: contactEmail, subject, html });
+      } catch (err) {
+        console.error("Welcome email failed to send:", err);
+      }
+    });
   }
 
-  // Not a login yet — the client still needs to set a password at this
-  // link before they can see their new workspace (see setClientPassword).
-  redirect(`/client-invite/${inviteToken}`);
-}
-
-/** Public — no organization login involved. Sets the client session cookie on success; the invite-setup flow (setClientPasswordAction below) is what actually creates the password this checks against. */
-export async function clientLoginAction(formData: FormData) {
-  const loginSlug = String(formData.get("loginSlug") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
-
-  const client = await verifyClientPassword(loginSlug, password);
-  const rateLimit = await checkClientLoginRateLimit(client?.id ?? loginSlug);
-  if (!rateLimit.allowed) redirect(`/client-login?error=rate_limited`);
-
-  await recordClientLoginAttempt(client?.id ?? null, !!client);
-  if (!client) redirect("/client-login?error=invalid");
-
-  const store = await cookies();
-  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(client.id), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
   redirect("/portal");
 }
 
@@ -607,25 +653,103 @@ export async function clientLogoutAction() {
   redirect("/client-login");
 }
 
-/** Public — completes an invite (or password reset) link: sets loginSlug+password and logs the client straight in. */
-export async function setClientPasswordAction(formData: FormData) {
-  const inviteToken = String(formData.get("inviteToken") ?? "");
-  const password = String(formData.get("password") ?? "");
-  const passwordConfirm = String(formData.get("passwordConfirm") ?? "");
-  if (password.length < 8) redirect(`/client-invite/${inviteToken}?error=short_password`);
-  if (password !== passwordConfirm) redirect(`/client-invite/${inviteToken}?error=mismatch`);
+/**
+ * Public — no session. Always redirects to the same "check your email"
+ * outcome regardless of whether a client was actually found — this is
+ * the whole point of the generic response (no signal for probing which
+ * emails are on file), not an oversight.
+ */
+export async function requestClientMagicLinkAction(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
 
-  const result = await setClientPassword(inviteToken, password);
-  if (!result) redirect("/client-login?error=invalid_invite");
+  if (email) {
+    const client = await getClientByContactEmail(email);
+    if (client?.organizationId) {
+      const rateLimit = await checkClientLoginRateLimit(client.id);
+      if (rateLimit.allowed) {
+        const { token } = await generateClientMagicLink(client.id, client.organizationId);
+        await recordClientLoginAttempt(client.id, true);
+        // Same reasoning as submitIntakeAction: the "check your email"
+        // response is identical either way, so there's nothing to gain
+        // by making the redirect wait on Resend's API.
+        const clientName = client.name;
+        after(async () => {
+          try {
+            const baseUrl = await getBaseUrl();
+            const url = `${baseUrl}/api/client-magic/${token}`;
+            const { subject, html } = renderClientMagicLinkEmail({ clientName, url, isWelcome: false });
+            await sendEmail({ to: email, subject, html });
+          } catch (err) {
+            console.error("Magic-link email failed to send:", err);
+          }
+        });
+      }
+    }
+  }
 
-  const store = await cookies();
-  store.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(result.id), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  redirect(`/client-login?sent=1&email=${encodeURIComponent(email)}`);
+}
+
+/**
+ * The client-requested fallback for opening the email on a different
+ * device than the one signing in — mints a fresh token+code (same call as
+ * the link flow, so requesting a code invalidates whatever link email was
+ * sent a moment ago, per generateClientMagicLink's own contract) but only
+ * ever emails the code, in its own code-only template with no sign-in
+ * button. Same generic "check your email" redirect and rate-limiting as
+ * requestClientMagicLinkAction — nothing here should let a probing request
+ * distinguish "no such email" from "sent."
+ */
+export async function requestClientMagicCodeAction(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+
+  if (email) {
+    const client = await getClientByContactEmail(email);
+    if (client?.organizationId) {
+      const rateLimit = await checkClientLoginRateLimit(client.id);
+      if (rateLimit.allowed) {
+        const { code } = await generateClientMagicLink(client.id, client.organizationId);
+        await recordClientLoginAttempt(client.id, true);
+        const clientName = client.name;
+        after(async () => {
+          try {
+            const { subject, html } = renderClientMagicCodeEmail({ clientName, code });
+            await sendEmail({ to: email, subject, html });
+          } catch (err) {
+            console.error("Magic-code email failed to send:", err);
+          }
+        });
+      }
+    }
+  }
+
+  redirect(`/client-login?sent=1&code=1&email=${encodeURIComponent(email)}`);
+}
+
+/**
+ * The 6-digit alternative to clicking the emailed link — for opening the
+ * email on a different device than the one signing in. Same rate-limiting
+ * (scoped by the resolved client, before the code is even checked) and
+ * same generic "invalid or expired" outcome as an expired link — never
+ * distinguishes "wrong code" from "no such email" or "already used."
+ */
+export async function verifyClientMagicCodeAction(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const code = String(formData.get("code") ?? "").trim();
+  const back = () => redirect(`/client-login?error=invalid_code&sent=1&code=1&email=${encodeURIComponent(email)}`);
+  if (!email || !code) back();
+
+  const client = await getClientByContactEmail(email);
+  if (client) {
+    const rateLimit = await checkClientLoginRateLimit(client.id);
+    if (!rateLimit.allowed) redirect(`/client-login?error=rate_limited&sent=1&code=1&email=${encodeURIComponent(email)}`);
+  }
+
+  const result = client ? await verifyClientMagicCode(email, code) : null;
+  await recordClientLoginAttempt(client?.id ?? null, !!result);
+  if (!result) back();
+
+  await setClientSession(result!.id);
   redirect("/portal");
 }
 
@@ -782,7 +906,7 @@ export async function postProjectMessageAction(formData: FormData) {
   // heavy query in getProjectDetail on top of sending one chat message,
   // which was the real, confirmed cause of repeated production timeouts
   // ("wave 1 timed out") triggered by ordinary chat use, not page load.
-  await postProjectMessage(projectId, organizationId, AGENCY_OWNER_NAME, body);
+  await postProjectMessage(projectId, organizationId, await getOrganizationActorName(organizationId), body);
 }
 
 /** Internal — uploads a file as its own chat message rather than attaching it to whatever's currently typed. */
@@ -793,7 +917,7 @@ export async function uploadChatFileAction(formData: FormData) {
   if (!projectId || !(file instanceof File)) throw new Error("Missing project or file");
 
   // No revalidatePath — MessagesTab already polls/refetches on its own.
-  const message = await postProjectMessage(projectId, organizationId, AGENCY_OWNER_NAME, file.name);
+  const message = await postProjectMessage(projectId, organizationId, await getOrganizationActorName(organizationId), file.name);
   await uploadMessageAttachment(projectId, organizationId, message.id, file);
 }
 
@@ -850,4 +974,22 @@ export async function updateProjectNotesAction(projectId: string, notes: string)
   await updateProjectNotes(projectId, organizationId, notes || null);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/dashboard");
+}
+
+export async function deleteOrganizationAction(id: string) {
+  await requirePlatformAdmin();
+  await deleteOrganization(id);
+  revalidatePath("/admin");
+}
+
+export async function restoreOrganizationAction(id: string) {
+  await requirePlatformAdmin();
+  await restoreOrganization(id);
+  revalidatePath("/admin");
+}
+
+export async function permanentlyDeleteOrganizationAction(id: string) {
+  await requirePlatformAdmin();
+  await permanentlyDeleteOrganization(id);
+  revalidatePath("/admin");
 }

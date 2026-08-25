@@ -15,7 +15,7 @@ import {
 import { listAccessItems } from "@/lib/queries/access-items";
 import { listDueMaintenancePlans } from "@/lib/queries/maintenance";
 import { withTimeout } from "@/lib/with-timeout";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, getOrganizationActorName } from "@/lib/auth";
 import { GenerateMaintenanceButton } from "@/components/generate-maintenance-button";
 import { SearchTrigger } from "@/components/search-trigger";
 import { DashboardStatRow } from "@/components/dashboard-stat-row";
@@ -45,13 +45,19 @@ export default async function DashboardPage({
   const { panel } = await searchParams;
 
   // Timeout-protected and fault-tolerant on its own, separate from the
-  // main Promise.all below — a failure here (tech badges, panel picker)
-  // shouldn't take down the rest of the dashboard's real data.
+  // main Promise.all below — a failure here (tech badges, panel picker,
+  // the greeting's name) shouldn't take down the rest of the dashboard's
+  // real data.
   let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
+  let ownerName = "there";
   try {
-    switcherProjects = await withTimeout(listProjectsForSwitcher(organizationId), 5000, "project switcher");
+    [switcherProjects, ownerName] = await withTimeout(
+      Promise.all([listProjectsForSwitcher(organizationId), getOrganizationActorName(organizationId)]),
+      5000,
+      "project switcher"
+    );
   } catch {
-    // swallow — empty switcher is an acceptable degraded state
+    // swallow — empty switcher and a generic greeting are an acceptable degraded state
   }
 
   const [projects, allTasks, activity, duePlans] = await withTimeout(
@@ -139,7 +145,7 @@ export default async function DashboardPage({
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-4xl font-bold">Dashboard</h1>
-            <p className="text-md text-muted-foreground">{greeting()}, Paul! 👋</p>
+            <p className="text-md text-muted-foreground">{greeting()}, {ownerName}! 👋</p>
           </div>
           <div className="flex items-center gap-2">
             <SearchTrigger className="mb-0 w-64" placeholder="Search projects, tasks, SOPs…" />

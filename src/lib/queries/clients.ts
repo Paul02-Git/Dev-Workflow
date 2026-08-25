@@ -1,9 +1,9 @@
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 import { db } from "@/db/client";
 import { clients, projects, tasks } from "@/db/schema";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { hashPassword } from "@/lib/auth";
-import { normalizeSlug } from "@/lib/queries/organizations";
+import { and, desc, eq, gt, ilike, inArray, isNull } from "drizzle-orm";
+
+const MAGIC_LINK_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
 export async function listClients(organizationId: string) {
   return db.select().from(clients).where(eq(clients.organizationId, organizationId)).orderBy(desc(clients.createdAt));
@@ -51,66 +51,88 @@ export async function updateClient(
 }
 
 /**
- * Mints (or returns the existing) one-time invite/reset token — visiting
- * /client-invite/[token] lets the client set loginSlug+password via
- * setClientPassword() below. Idempotent while pending (repeat clicks of
- * "Send invite" return the same link rather than invalidating an
- * already-sent one) but works just as well as a "resend"/"reset password"
- * mechanism even after the client has already set a password — there's no
- * separate forgot-password flow; generating a fresh invite and setting a
- * new password through it *is* the reset flow.
+ * Mints a fresh magic-link token and a 6-digit code together — always,
+ * unlike the old one-time invite link this replaces: a repeat request
+ * (client asks for a new link, agency clicks "send login link" again)
+ * must invalidate whatever link/code is still sitting in an old email,
+ * not return the same one. The code is only ever emailed if the caller
+ * separately asks for it (see requestClientMagicCodeAction) — it's minted
+ * here regardless so both share one expiry and one invalidation, but the
+ * default link email never includes it. Same mechanism for a client's
+ * very first login and every one after; there's no separate signup/reset
+ * flow anymore.
  */
-export async function generateClientInviteLink(clientId: string, organizationId: string): Promise<string> {
-  const [existing] = await db
-    .select({ inviteToken: clients.inviteToken })
+export async function generateClientMagicLink(clientId: string, organizationId: string): Promise<{ token: string; code: string }> {
+  const token = randomBytes(24).toString("hex");
+  const code = String(randomInt(1_000_000)).padStart(6, "0");
+  await db
+    .update(clients)
+    .set({ inviteToken: token, inviteCode: code, inviteTokenExpiresAt: new Date(Date.now() + MAGIC_LINK_TTL_MS) })
+    .where(and(eq(clients.id, clientId), eq(clients.organizationId, organizationId)));
+  return { token, code };
+}
+
+/** Just enough to send the magic-link email — the agency-facing "Send login link" button. */
+export async function getClientForMagicLinkSend(clientId: string, organizationId: string): Promise<{ name: string; contactEmail: string | null } | null> {
+  const [client] = await db
+    .select({ name: clients.name, contactEmail: clients.contactEmail })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.organizationId, organizationId)));
-  if (existing?.inviteToken) return existing.inviteToken;
-  const token = randomBytes(24).toString("hex");
-  await db.update(clients).set({ inviteToken: token }).where(and(eq(clients.id, clientId), eq(clients.organizationId, organizationId)));
-  return token;
+  return client ?? null;
 }
 
 export async function revokeClientInviteLink(clientId: string, organizationId: string): Promise<void> {
-  await db.update(clients).set({ inviteToken: null }).where(and(eq(clients.id, clientId), eq(clients.organizationId, organizationId)));
+  await db
+    .update(clients)
+    .set({ inviteToken: null, inviteCode: null, inviteTokenExpiresAt: null })
+    .where(and(eq(clients.id, clientId), eq(clients.organizationId, organizationId)));
 }
 
-// --- Everything below is reached via the invite token or the client's own
-// session, not an internal organizationId-scoped request.
+// --- Everything below is reached via the magic-link token/code or the
+// client's own session, not an internal organizationId-scoped request.
 
-export async function getClientByInviteToken(token: string) {
-  const [client] = await db.select().from(clients).where(eq(clients.inviteToken, token));
+/**
+ * Reusable until it expires, not single-use — a plain read, no
+ * consume-and-clear. Single-use was dropped deliberately: email security
+ * scanners (Gmail/Google Workspace link scanning, Outlook Safe Links,
+ * corporate mail gateways) routinely GET links in an email body before
+ * the recipient ever opens it, which silently burned the one-time token
+ * before a real click had a chance. Any token/code the same
+ * generateClientMagicLink call minted stays valid until
+ * inviteTokenExpiresAt regardless of how many times it's used —
+ * requesting a *new* link/code (or an explicit revoke) is still what
+ * invalidates the old one, exactly as before. Returns null for an
+ * unknown or expired token — the caller doesn't need to (and shouldn't)
+ * distinguish which.
+ */
+export async function verifyClientMagicLink(token: string): Promise<{ id: string; name: string } | null> {
+  const [client] = await db
+    .select({ id: clients.id, name: clients.name })
+    .from(clients)
+    .where(and(eq(clients.inviteToken, token), gt(clients.inviteTokenExpiresAt, new Date())));
   return client ?? null;
 }
 
 /**
- * Completes the invite flow: picks a globally-unique loginSlug from the
- * client's name (falling back to a random suffix on collision, same
- * pattern organizations.createOrganization uses for its own slug), hashes
- * the password, and clears inviteToken so it can't be reused — a fresh
- * invite must be generated for a subsequent reset. Returns the final slug
- * so the caller can show/log the client in immediately.
+ * Alternative to clicking the emailed link — matched by contactEmail (same
+ * single-match-only rule as getClientByContactEmail, for the same
+ * no-probing reason) plus the 6-digit code. Reusable until expiry, same
+ * as verifyClientMagicLink above and for the same reason — this is a
+ * plain read, not a consume-and-clear. Wrong/expired code, ambiguous
+ * email, or no email on file all return null without distinguishing why.
  */
-export async function setClientPassword(inviteToken: string, password: string): Promise<{ id: string; loginSlug: string } | null> {
-  const client = await getClientByInviteToken(inviteToken);
-  if (!client) return null;
+export async function verifyClientMagicCode(email: string, code: string): Promise<{ id: string; name: string } | null> {
+  const matches = await db
+    .select({ id: clients.id, name: clients.name, inviteCode: clients.inviteCode, inviteTokenExpiresAt: clients.inviteTokenExpiresAt })
+    .from(clients)
+    .where(ilike(clients.contactEmail, email));
+  if (matches.length !== 1) return null;
 
-  let loginSlug = normalizeSlug(client.name) || "client";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = attempt === 0 ? loginSlug : `${loginSlug}-${randomBytes(2).toString("hex")}`;
-    const [existing] = await db.select({ id: clients.id }).from(clients).where(eq(clients.loginSlug, candidate));
-    if (!existing || existing.id === client.id) {
-      loginSlug = candidate;
-      break;
-    }
-  }
+  const client = matches[0];
+  if (!client.inviteCode || client.inviteCode !== code) return null;
+  if (!client.inviteTokenExpiresAt || client.inviteTokenExpiresAt.getTime() < Date.now()) return null;
 
-  await db
-    .update(clients)
-    .set({ loginSlug, passwordHash: hashPassword(password), inviteToken: null, updatedAt: new Date() })
-    .where(eq(clients.id, client.id));
-
-  return { id: client.id, loginSlug };
+  return { id: client.id, name: client.name };
 }
 
 /**
@@ -129,6 +151,24 @@ export async function verifyClientOwnsProjectBySession(clientId: string, project
     .from(projects)
     .where(and(eq(projects.clientId, clientId), eq(projects.id, projectId)));
   return row?.organizationId ?? null;
+}
+
+/**
+ * Powers the magic-link request flow (src/lib/actions.ts's
+ * requestClientMagicLinkAction) — looks up a client by contactEmail
+ * (case-insensitive; there's no uniqueness constraint on this column,
+ * and the same real person could plausibly be a client of two different
+ * agencies using this app). Returns null on zero matches *or more than
+ * one* — never guesses among ambiguous matches; the caller shows the
+ * same generic "check your email" outcome either way, so this never
+ * leaks which emails are on file.
+ */
+export async function getClientByContactEmail(email: string): Promise<{ id: string; name: string; organizationId: string | null } | null> {
+  const matches = await db
+    .select({ id: clients.id, name: clients.name, organizationId: clients.organizationId })
+    .from(clients)
+    .where(ilike(clients.contactEmail, email));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 /** A client's own record, for self-service actions (the Settings tab) where clientId comes from their own session rather than an organization-scoped lookup. */
@@ -167,7 +207,7 @@ export async function getClientPortalDashboard(clientId: string) {
   return { client, projects: projectsWithProgress };
 }
 
-/** Creates a client from the public intake form (organizationId resolved from the intake token itself, not a session) and immediately mints their invite link so they can set a password and land in their workspace right away. */
+/** Creates a client from the public intake form (organizationId resolved from the intake token itself, not a session) and immediately mints a magic link so the caller can email them straight into their workspace. */
 export async function createClientViaIntake(input: {
   organizationId: string;
   name: string;
@@ -178,8 +218,8 @@ export async function createClientViaIntake(input: {
 }) {
   const { organizationId, ...rest } = input;
   const client = await createClient({ ...rest, organizationId, source: "intake" });
-  const inviteToken = await generateClientInviteLink(client.id, organizationId);
-  return { client, inviteToken };
+  const { token: magicLinkToken, code: magicLinkCode } = await generateClientMagicLink(client.id, organizationId);
+  return { client, magicLinkToken, magicLinkCode };
 }
 
 /**

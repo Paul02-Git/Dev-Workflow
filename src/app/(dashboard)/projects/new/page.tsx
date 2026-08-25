@@ -3,6 +3,7 @@ import { createProjectAction } from "@/lib/actions";
 import { TECHNOLOGIES } from "@/data/technologies";
 import { PROJECT_TYPES } from "@/data/project-types";
 import { ClientPicker } from "@/components/client-picker";
+import { SubmitButton } from "@/components/submit-button";
 import { requireAuth } from "@/lib/auth";
 
 export default async function NewProjectPage({
@@ -76,12 +77,12 @@ export default async function NewProjectPage({
           </p>
         </div>
 
-        <button
-          type="submit"
-          className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
+        <SubmitButton
+          pendingLabel="Generating workflow…"
+          className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
         >
           Generate workflow →
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

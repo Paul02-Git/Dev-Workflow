@@ -84,6 +84,12 @@ export const organizations = pgTable("organizations", {
   // different agencies' passwords need to live somewhere other than one
   // env var each.
   passwordHash: text("password_hash").notNull(),
+  // Optional — powers "Sign in with Google" (see src/lib/google-oauth.ts):
+  // a Google account whose verified email matches this logs straight into
+  // this org. Nullable/unique, lowercase-normalized at write time. Existing
+  // orgs (just Dovera) have no way to set this yet outside a direct SQL
+  // backfill; new orgs can set it optionally at signup.
+  email: text("email").unique(),
   // Folded in from the old agency_settings singleton — this org's
   // reusable "New Client Intake" link.
   intakeToken: text("intake_token").unique(),
@@ -95,6 +101,11 @@ export const organizations = pgTable("organizations", {
   // waiting for a session to expire.
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Soft delete — admin-only, blocks login immediately, restorable.
+  // permanentlyDeleteOrganization can be triggered by platform admin at
+  // any point after this is set — the 30-day figure shown in the admin UI
+  // is informational (a suggested grace period), not an enforced wait.
+  deletedAt: timestamp("deleted_at"),
 });
 
 // ---------------------------------------------------------------------------
@@ -111,18 +122,34 @@ export const clients = pgTable("clients", {
   contactPhone: text("contact_phone"),
   address: text("address"),
   notes: text("notes"),
-  // One-time setup/reset link (same random-token shape the old, now-retired
-  // portalToken used) — visiting it lets the client set (or reset)
-  // loginSlug/passwordHash below via the /client-invite/[token] page.
-  // Unlike the old portalToken, this does NOT grant ongoing access by
-  // itself once a password exists; it's the invite/reset mechanism only.
+  // Magic-link token (see generateClientMagicLink / verifyClientMagicLink
+  // in src/lib/queries/clients.ts) — this is how a client gets into
+  // /portal, every time, not just first setup. Minted fresh on each
+  // request (invalidating any prior link still sitting in an inbox).
+  // Reusable until it expires, not single-use — email security scanners
+  // (Gmail/Workspace link scanning, Outlook Safe Links) routinely GET
+  // links in an email body before the recipient opens it, which would
+  // silently burn a one-time token before a real click happened.
+  // inviteTokenExpiresAt is what actually limits it; a token past its
+  // expiry is treated as if it doesn't exist.
   inviteToken: text("invite_token").unique(),
-  // Real client login — a client authenticates with loginSlug + password
-  // (same scrypt-hash + HMAC-signed-session shape as organizations' own
-  // login, see src/lib/auth.ts), not a bearer token in a URL. loginSlug is
-  // globally unique (like organizations.slug) so a client can log in
-  // without needing to also know which organization they belong to.
-  // Both null until the client actually completes the invite flow.
+  inviteTokenExpiresAt: timestamp("invite_token_expires_at"),
+  // Short 6-digit alternative to clicking the link — minted alongside the
+  // token on every request, but only ever emailed in its own separate,
+  // code-only email if the client explicitly asks for it (opening on a
+  // different device); the default link email never includes it. Reusable
+  // until the same expiry as the token above, for the same scanner-safety
+  // reason. Not globally unique on its own (only 1M possible values) —
+  // verification is always scoped by the client's contactEmail first,
+  // same as the token-less magic-link request flow, and rate-limited the
+  // same way login attempts are.
+  inviteCode: text("invite_code"),
+  // Retired (2026-08-24, replaced by magic links above) — left in place,
+  // unused, rather than dropped: the two clients who'd already set a
+  // password both have a contactEmail on file so nothing depended on
+  // these surviving, but this app has a standing habit of not dropping
+  // columns until a change has proven out (see agency_settings' own
+  // history). loginSlug/passwordHash are never written or read anymore.
   loginSlug: text("login_slug").unique(),
   passwordHash: text("password_hash"),
   // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the

@@ -1,67 +1,108 @@
-import Image from "next/image";
-import { clientLoginAction } from "@/lib/actions";
+import {
+  requestClientMagicLinkAction,
+  requestClientMagicCodeAction,
+  verifyClientMagicCodeAction,
+} from "@/lib/actions";
+import { AuthCard } from "@/components/auth-card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default async function ClientLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; sent?: string; code?: string; email?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, sent, code, email } = await searchParams;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="app-card w-full max-w-sm rounded-xl border border-border bg-card p-6">
-        <div className="mb-2 flex flex-col items-center">
-          <Image src="/logo.png" alt="" width={80} height={80} loading="eager" className="shrink-0 rounded-md" />
-          <div className="text-lg font-semibold leading-tight">
-            DEV<span className="text-primary">OS</span>
+    <AuthCard
+      title="Client Workspace"
+      subtitle="We'll email you a link to sign in — no password needed"
+      googleHref="/api/auth/google/start?intent=client"
+      footer="New here? Your agency will send you a link to get started."
+    >
+      {sent && code ? (
+        <div className="space-y-4">
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-4 text-center text-sm">
+            <p className="font-semibold">Check your email</p>
+            <p className="mt-1 text-xs text-muted-foreground">We sent a 6-digit code. Enter it below to sign in.</p>
           </div>
-          <div className="text-xs text-muted-foreground">Client workspace</div>
-        </div>
 
-        <form action={clientLoginAction} className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[#52514e]">Username</label>
-            <input
-              type="text"
-              name="loginSlug"
-              required
-              autoFocus
-              autoCapitalize="off"
-              autoCorrect="off"
-              className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[#52514e]">Password</label>
-            <input
-              type="password"
-              name="password"
-              required
-              className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
-            />
-          </div>
+          <form action={verifyClientMagicCodeAction} className="space-y-1.5">
+            <Label htmlFor="code">Code</Label>
+            <input type="hidden" name="email" value={email ?? ""} />
+            <div className="flex gap-2">
+              <Input
+                id="code"
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="123456"
+                required
+                autoFocus
+                className="text-center tracking-[0.3em]"
+              />
+              <button type="submit" className={cn(buttonVariants({ variant: "outline" }), "shrink-0")}>
+                Verify
+              </button>
+            </div>
+          </form>
+          {error === "invalid_code" && (
+            <p className="text-xs font-medium text-[#d03b3b]">That code is wrong or expired. Request a new one below.</p>
+          )}
           {error === "rate_limited" && (
-            <p className="text-xs font-medium text-[#d03b3b]">Too many failed attempts. Try again in 15 minutes.</p>
+            <p className="text-xs font-medium text-[#d03b3b]">Too many attempts. Try again in a few minutes.</p>
           )}
-          {error === "invalid" && (
-            <p className="text-xs font-medium text-[#d03b3b]">Wrong username or password. Try again.</p>
+
+          <a href="/client-login" className="block text-center text-xs text-muted-foreground hover:underline">
+            Use a different email
+          </a>
+        </div>
+      ) : sent ? (
+        <div className="space-y-4">
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-4 text-center text-sm">
+            <p className="font-semibold">Check your email</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Click the link to sign in. Works once, expires in 20 minutes.
+            </p>
+          </div>
+
+          <form action={requestClientMagicCodeAction}>
+            <input type="hidden" name="email" value={email ?? ""} />
+            <button type="submit" className="block w-full text-center text-xs text-muted-foreground hover:underline">
+              Opening this on another device? Email me a code instead
+            </button>
+          </form>
+
+          <a href="/client-login" className="block text-center text-xs text-muted-foreground hover:underline">
+            Use a different email
+          </a>
+        </div>
+      ) : (
+        <form action={requestClientMagicLinkAction} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" name="email" placeholder="you@yourcompany.com" required autoFocus autoCapitalize="off" autoCorrect="off" />
+          </div>
+          {error === "magic_expired" && (
+            <p className="text-xs font-medium text-[#d03b3b]">That link expired or was already used. Request a new one below.</p>
           )}
-          {error === "invalid_invite" && (
-            <p className="text-xs font-medium text-[#d03b3b]">That setup link is no longer valid. Ask Paul to send a new one.</p>
+          {error === "google_no_account" && (
+            <p className="text-xs font-medium text-[#d03b3b]">
+              No account is linked to that Google email yet. Try requesting a login link below instead, or contact your agency.
+            </p>
           )}
-          <button
-            type="submit"
-            className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
-          >
-            Sign in
+          {error === "google_failed" && (
+            <p className="text-xs font-medium text-[#d03b3b]">Google sign-in didn&apos;t go through. Please try again.</p>
+          )}
+          <button type="submit" className={cn(buttonVariants(), "w-full")}>
+            Send me a login link
           </button>
         </form>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Don&apos;t have an account yet? Paul will send you a setup link.
-        </p>
-      </div>
-    </div>
+      )}
+    </AuthCard>
   );
 }

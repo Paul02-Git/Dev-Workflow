@@ -23,9 +23,10 @@ import { generateWorkflow } from "@/lib/workflow-engine/generate-workflow";
 import { computeEffectiveStatuses } from "@/lib/workflow-engine/blocked-status";
 import { computeHealthScore } from "@/lib/health/health-score";
 import { checkProject, type TaskLookup } from "@/lib/health/forgotten-task-rules";
-import { accessItemPresetsForTechnologies } from "@/data/access-item-presets";
+import { accessItemPresetsForTechnologies, resolvePresetInstructions } from "@/data/access-item-presets";
 import { CLIENT_ACTION_CANONICAL_KEYS } from "@/data/client-action-keys";
-import { AGENCY_OWNER_NAME, CLIENT_ACTOR_NAME } from "@/data/agency-info";
+import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
+import { getOrganizationActorName, getOrganizationContactEmail } from "@/lib/auth";
 import { CLIENT_PORTAL_PHASES } from "@/data/client-portal-phases";
 import { withTimeout } from "@/lib/with-timeout";
 
@@ -135,7 +136,7 @@ export async function updateProjectStatus(projectId: string, organizationId: str
     projectId,
     action: "project_status_changed",
     detail: status,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
 
   return project;
@@ -299,13 +300,14 @@ export async function createProjectWithWorkflow(input: {
 
   const accessPresets = accessItemPresetsForTechnologies(input.technologyKeys);
   if (accessPresets.length > 0) {
+    const agencyEmail = await getOrganizationContactEmail(organizationId);
     await db.insert(accessItems).values(
       accessPresets.map((preset) => ({
         organizationId,
         projectId: project.id,
         name: preset.name,
         role: preset.defaultRole,
-        instructions: preset.instructions,
+        instructions: resolvePresetInstructions(preset.instructions, agencyEmail),
         // Every access item starts NOT_REQUESTED (the schema default),
         // even self_created ones (Cloudways, GA4, domain registrar...) —
         // Paul marks each one connected explicitly once it's actually set
@@ -319,7 +321,7 @@ export async function createProjectWithWorkflow(input: {
     projectId: project.id,
     action: "project_created",
     detail: `Generated ${plan.tasks.length} tasks across ${plan.stages.length} stages from: ${input.technologyKeys.join(", ")}`,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
 
   return project;
@@ -516,7 +518,7 @@ export async function updateTaskStatus(taskId: string, organizationId: string, s
       taskId: task.id,
       action: "task_status_changed",
       detail: status,
-      actorName: AGENCY_OWNER_NAME,
+      actorName: await getOrganizationActorName(organizationId),
     });
 
     // Recompute and persist the project's health score.
@@ -556,6 +558,7 @@ export async function bulkUpdateTaskStatus(taskIds: string[], organizationId: st
 
   if (updated.length === 0) return [];
 
+  const actorName = await getOrganizationActorName(organizationId);
   await db.insert(activityLogs).values(
     updated.map((t) => ({
       organizationId,
@@ -563,7 +566,7 @@ export async function bulkUpdateTaskStatus(taskIds: string[], organizationId: st
       taskId: t.id,
       action: "task_status_changed",
       detail: status,
-      actorName: AGENCY_OWNER_NAME,
+      actorName,
     }))
   );
 
@@ -810,7 +813,7 @@ export async function createAdHocTask(input: {
     taskId: task.id,
     action: "task_added_manually",
     detail: task.title,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
 
   return task;
@@ -1134,7 +1137,7 @@ export async function generateHandoffLink(projectId: string, organizationId: str
     projectId,
     action: "handoff_link_generated",
     detail: null,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
   return token;
 }
@@ -1146,7 +1149,7 @@ export async function revokeHandoffLink(projectId: string, organizationId: strin
     projectId,
     action: "handoff_link_revoked",
     detail: null,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
 }
 

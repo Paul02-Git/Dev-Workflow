@@ -1,8 +1,11 @@
 import { createHmac, timingSafeEqual, randomBytes, scryptSync } from "crypto";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { loginAttempts, organizations, clients } from "@/db/schema";
+import { loginAttempts, organizations } from "@/db/schema";
+import { AGENCY_EMAIL } from "@/data/agency-info";
+import { withTimeout } from "@/lib/with-timeout";
 
 export const SESSION_COOKIE_NAME = "workflow_os_session";
 const SESSION_VERSION = "v2"; // v1 was the pre-multi-tenant single-shared-password cookie.
@@ -58,18 +61,30 @@ export function verifyPasswordHash(password: string, stored: string): boolean {
   return timingSafeEqual(actual, expected);
 }
 
-/** Looks up an organization by slug and verifies the password against its stored hash. Returns the org's id/name on success, null on any failure (unknown slug or wrong password) — deliberately not distinguishing which, same reasoning as the old single-password flow. */
+/**
+ * Looks up an organization by email and verifies the password against its
+ * stored hash. Returns null on any failure (unknown email or wrong
+ * password) — deliberately not distinguishing which, same reasoning as
+ * the old single-password flow. Deliberately does NOT filter out
+ * soft-deleted orgs the way most other lookups in this codebase do: the
+ * caller (loginAction) needs to tell "wrong credentials" apart from
+ * "correct credentials, but this account was deactivated" so it can send
+ * a deactivated org to a clear explanation instead of a generic wrong-
+ * password error — proving you know the password is proof of ownership,
+ * so it's safe to reveal deactivation status at that point. `deletedAt` on
+ * the returned object is what the caller branches on.
+ */
 export async function verifyOrganizationPassword(
-  slug: string,
+  email: string,
   password: string
-): Promise<{ id: string; name: string } | null> {
+): Promise<{ id: string; name: string; deletedAt: Date | null } | null> {
   const [org] = await db
-    .select({ id: organizations.id, name: organizations.name, passwordHash: organizations.passwordHash })
+    .select({ id: organizations.id, name: organizations.name, passwordHash: organizations.passwordHash, deletedAt: organizations.deletedAt })
     .from(organizations)
-    .where(eq(organizations.slug, slug));
+    .where(eq(organizations.email, email.trim().toLowerCase()));
   if (!org) return null;
   if (!verifyPasswordHash(password, org.passwordHash)) return null;
-  return { id: org.id, name: org.name };
+  return { id: org.id, name: org.name, deletedAt: org.deletedAt };
 }
 
 export function makeSessionCookieValue(organizationId: string): string {
@@ -134,6 +149,27 @@ export async function recordLoginAttempt(organizationId: string | null, success:
 }
 
 /**
+ * Resolves the display name to attribute an authenticated agency action to
+ * (activity-log "who did this," the internal Messages tab's author name,
+ * the dashboard greeting) — the organization's own name, which for a
+ * Google-signup account is that real person's name (see
+ * createOrganizationFromGoogle in queries/organizations.ts), not a
+ * hardcoded single-tenant constant. Falls back to "Agency" only if the org
+ * row is somehow gone by the time this runs (shouldn't happen for anything
+ * gated by requireAuth first).
+ */
+export async function getOrganizationActorName(organizationId: string): Promise<string> {
+  const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, organizationId));
+  return org?.name ?? "Agency";
+}
+
+/** Resolves which email to tell a client to invite (access-item preset instructions — see resolvePresetInstructions in data/access-item-presets.ts). Falls back to AGENCY_EMAIL only for the unexpected case of an org with no email on file — signup requires one, so this should be rare in practice. */
+export async function getOrganizationContactEmail(organizationId: string): Promise<string> {
+  const [org] = await db.select({ email: organizations.email }).from(organizations).where(eq(organizations.id, organizationId));
+  return org?.email ?? AGENCY_EMAIL;
+}
+
+/**
  * Defense-in-depth for sensitive server actions (the password vault reveal
  * action in particular). Proxy already gates every page route, but Next's
  * own docs warn that a matcher change or route refactor can silently drop
@@ -141,14 +177,42 @@ export async function recordLoginAttempt(organizationId: string | null, success:
  * re-check the session themselves rather than trusting Proxy alone.
  * Returns the caller's organizationId — every query this powers must be
  * scoped to it.
+ *
+ * The DB check is timeout-protected (see withTimeout/resetDbConnection) —
+ * this runs on literally every dashboard page load via the layout, ahead
+ * of everything else, so a single stuck pooled connection here (this
+ * project's Supabase pooler has hit this failure mode more than once —
+ * see with-timeout.ts) would otherwise hang every page in the app until
+ * Postgres's own statement_timeout eventually kills it, with no pool reset
+ * in between to let the next request recover. This still throws on
+ * timeout, same as any other auth failure — a stuck connection must never
+ * be treated as "authenticated" — it just fails fast and clears the
+ * poisoned pool instead of hanging.
+ *
+ * Also handles an org being deleted out from under an already-logged-in
+ * session (the soft-delete blocks login going forward, but doesn't touch
+ * any session cookie already issued) — redirects to /account-deactivated
+ * instead of the bare "Not authenticated" throw a missing/invalid cookie
+ * gets, since that's a materially different, more helpful outcome for
+ * someone who still has a live session for a now-deactivated org.
  */
 export async function requireAuth(): Promise<{ organizationId: string }> {
   const store = await cookies();
   const value = store.get(SESSION_COOKIE_NAME)?.value;
   const session = parseSessionCookieValue(value);
-  if (!session) {
-    throw new Error("Not authenticated");
-  }
+  if (!session) throw new Error("Not authenticated");
+
+  const [org] = await withTimeout(
+    db
+      .select({ id: organizations.id, deletedAt: organizations.deletedAt })
+      .from(organizations)
+      .where(eq(organizations.id, session.organizationId)),
+    5000,
+    "requireAuth"
+  );
+  if (!org) throw new Error("Not authenticated");
+  if (org.deletedAt) redirect("/account-deactivated");
+
   return session;
 }
 
@@ -162,20 +226,6 @@ export async function requireAuth(): Promise<{ organizationId: string }> {
 // would obscure the one thing that must never blur — a client session must
 // never be usable as, or confusable with, an agency session.
 // ---------------------------------------------------------------------------
-
-/** Mirrors verifyOrganizationPassword — looks up a client by loginSlug, verifies against its stored hash. Returns null on any failure (unknown slug, no password set yet, or wrong password) without distinguishing which. */
-export async function verifyClientPassword(
-  loginSlug: string,
-  password: string
-): Promise<{ id: string; name: string } | null> {
-  const [client] = await db
-    .select({ id: clients.id, name: clients.name, passwordHash: clients.passwordHash })
-    .from(clients)
-    .where(eq(clients.loginSlug, loginSlug));
-  if (!client || !client.passwordHash) return null;
-  if (!verifyPasswordHash(password, client.passwordHash)) return null;
-  return { id: client.id, name: client.name };
-}
 
 export function makeClientSessionCookieValue(clientId: string): string {
   const payload = `${CLIENT_SESSION_VERSION}:${clientId}`;

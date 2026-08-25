@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireClientAuth } from "@/lib/auth";
+import { requireClientAuth, getOrganizationActorName } from "@/lib/auth";
 import { getClientWorkspaceOverview, getClientVisibleFiles, listProjectMessages, getClientProjectPortalDetail } from "@/lib/queries/projects";
 import { ClientWorkspaceShell } from "@/components/client-workspace-shell";
 import { PortalComments } from "@/components/portal-comments";
@@ -22,6 +22,7 @@ export default async function ClientWorkspacePage() {
   const overview = await getClientWorkspaceOverview(clientId);
   if (!overview) redirect("/client-login");
   const { client, projectSummaries } = overview;
+  const agencyName = client.organizationId ? await getOrganizationActorName(client.organizationId) : "your agency";
 
   const [projectFiles, projectThreads, projectDetails] = await Promise.all([
     Promise.all(projectSummaries.map((s) => getClientVisibleFiles(s.project.id))),
@@ -53,8 +54,8 @@ export default async function ClientWorkspacePage() {
           <div>
             <strong className="block text-sm">You&apos;re all set, {client.name.split(" ")[0]}.</strong>
             <p className="mt-0.5 text-xs text-[#52514e]">
-              Paul has your info on file and is setting up your first project — usually within a business day. Feel
-              free to leave a comment below if you have questions in the meantime.
+              {agencyName} has your info on file and is setting up your first project — usually within a business day.
+              Feel free to leave a comment below if you have questions in the meantime.
             </p>
           </div>
         </div>
@@ -125,7 +126,7 @@ export default async function ClientWorkspacePage() {
         ))
       )}
 
-      <PortalComments projects={projectThreads} />
+      <PortalComments projects={projectThreads} agencyName={agencyName} />
     </div>
   );
 
@@ -252,7 +253,7 @@ export default async function ClientWorkspacePage() {
     </div>
   );
 
-  const settingsContent = <ClientSettingsTab loginSlug={client.loginSlug} client={client} />;
+  const settingsContent = <ClientSettingsTab client={client} />;
 
   return (
     <ClientWorkspaceShell

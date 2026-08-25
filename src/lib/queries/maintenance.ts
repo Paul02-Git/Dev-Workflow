@@ -11,7 +11,7 @@ import {
   activityLogs,
 } from "@/db/schema";
 import { eq, and, sql, inArray, isNull, ne } from "drizzle-orm";
-import { AGENCY_OWNER_NAME } from "@/data/agency-info";
+import { getOrganizationActorName } from "@/lib/auth";
 
 // Generated maintenance tasks land in this existing stage (already part of
 // STAGES / the workflow templates) rather than a new one — no schema/stage
@@ -237,7 +237,7 @@ export async function generateMaintenanceRun(planId: string, organizationId: str
     projectId: plan.projectId,
     action: "maintenance_run_generated",
     detail: `${plan.name}: ${resetIds.length} task(s) reset, ${newTitles.length} new — due ${nextDue.toLocaleDateString()}`,
-    actorName: AGENCY_OWNER_NAME,
+    actorName: await getOrganizationActorName(organizationId),
   });
 
   await db

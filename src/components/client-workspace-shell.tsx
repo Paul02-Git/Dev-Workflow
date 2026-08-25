@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { clientLogoutAction } from "@/lib/actions";
+import { LogoutButton } from "@/components/logout-button";
 
 /**
  * Sidebar shell for the public Client Workspace (/portal/[token]) — same
@@ -37,8 +38,8 @@ export function ClientWorkspaceShell({
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card p-4">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside className="flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-4">
         <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
           <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
           <div>
@@ -78,18 +79,15 @@ export function ClientWorkspaceShell({
             This link is private to you — only people who have it can view or add to it.
           </p>
           <div className="border-t border-border pt-3">
-            <form action={clientLogoutAction}>
-              <button
-                type="submit"
-                className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
-              >
-                Sign out
-              </button>
-            </form>
+            <LogoutButton
+              action={clientLogoutAction}
+              triggerLabel="Sign out"
+              triggerClassName="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
+            />
           </div>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-8">
+      <main className="h-screen min-w-0 flex-1 overflow-y-auto p-8">
         {tabs.map((tab, i) => (
           <div key={tab.slug} className={active === i ? "" : "hidden"}>
             {tab.content}

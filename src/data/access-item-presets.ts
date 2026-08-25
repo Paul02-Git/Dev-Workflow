@@ -1,5 +1,3 @@
-import { AGENCY_EMAIL } from "@/data/agency-info";
-
 /**
  * Standard access items to auto-create when a project is generated, keyed
  * by selected technology. `ownership` documents which of two real models
@@ -20,8 +18,20 @@ export type AccessItemPreset = {
   instructions: string;
 };
 
+// Placeholder, not a real address — these presets are shared across every
+// organization on the platform, so the actual agency email can't be baked
+// in at module load time. resolvePresetInstructions() below substitutes
+// the real one in at the point an access item is actually created, once
+// the calling organization is known.
+const AGENCY_EMAIL_PLACEHOLDER = "{{AGENCY_EMAIL}}";
+
 const inviteInstructions = (where: string, role: string) =>
-  `Ask the client to add ${AGENCY_EMAIL} as ${role} ${where}.`;
+  `Ask the client to add ${AGENCY_EMAIL_PLACEHOLDER} as ${role} ${where}.`;
+
+/** Fills in the real agency email at access-item creation time — see AGENCY_EMAIL_PLACEHOLDER above. A no-op for presets (self_created ones) whose instructions never mention an email. */
+export function resolvePresetInstructions(instructions: string, agencyEmail: string): string {
+  return instructions.replaceAll(AGENCY_EMAIL_PLACEHOLDER, agencyEmail);
+}
 
 // Preset objects are defined once and referenced from every technology
 // bundle that needs them (e.g. GA4_PRESET appears under both "ga4" and

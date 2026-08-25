@@ -11,7 +11,7 @@ type ClientInfo = {
   address: string | null;
 };
 
-export function ClientSettingsTab({ loginSlug, client }: { loginSlug: string | null; client: ClientInfo }) {
+export function ClientSettingsTab({ client }: { client: ClientInfo }) {
   const [saved, setSaved] = useState(false);
 
   return (
@@ -55,14 +55,13 @@ export function ClientSettingsTab({ loginSlug, client }: { loginSlug: string | n
         </form>
       </section>
 
-      {loginSlug && (
-        <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-          <h2 className="mb-3 text-sm font-bold">Account</h2>
-          <p className="text-sm">
-            You log in as <strong className="font-bold">{loginSlug}</strong>. Ask Paul for a password reset link if you forget it.
-          </p>
-        </section>
-      )}
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <h2 className="mb-3 text-sm font-bold">Account</h2>
+        <p className="text-sm">
+          No password to remember — we&apos;ll email a login link to{" "}
+          <strong className="font-bold">{client.contactEmail ?? "your email"}</strong> each time you need to sign in.
+        </p>
+      </section>
     </div>
   );
 }

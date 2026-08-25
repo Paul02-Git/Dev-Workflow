@@ -3,10 +3,12 @@ import { resolveIntakeToken } from "@/lib/queries/agency-settings";
 import { submitIntakeAction } from "@/lib/actions";
 import { TECHNOLOGIES } from "@/data/technologies";
 import { PROJECT_TYPES } from "@/data/project-types";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function IntakePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  if (!(await resolveIntakeToken(token))) notFound();
+  const resolved = await resolveIntakeToken(token);
+  if (!resolved) notFound();
 
   return (
     <div className="min-h-screen bg-background px-4 py-12 text-foreground">
@@ -14,7 +16,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
         <div className="mb-6 text-center">
           <h1 className="text-xl font-semibold">Let&apos;s get your details</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            One quick form — Paul will follow up to kick off your project.
+            One quick form — {resolved.organizationName} will follow up to kick off your project.
           </p>
         </div>
 
@@ -31,8 +33,9 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
               <input name="company" placeholder="Better Life PT" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-[#52514e]">Email</label>
-              <input name="contactEmail" type="email" placeholder="you@example.com" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm" />
+              <label className="mb-1 block text-xs font-semibold text-[#52514e]">Email *</label>
+              <input name="contactEmail" type="email" required placeholder="you@example.com" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm" />
+              <p className="mt-1 text-[11px] text-muted-foreground">We&apos;ll email you a link to access your workspace — no password to set.</p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-[#52514e]">Phone</label>
@@ -44,29 +47,24 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
             </div>
           </div>
 
-          <details className="rounded-lg border border-dashed border-black/15 p-4">
-            <summary className="cursor-pointer text-sm font-semibold">
-              What do you need help with? <span className="font-normal text-muted-foreground">(optional)</span>
-            </summary>
-            <p className="mb-3 mt-2 text-xs text-muted-foreground">
-              Not sure yet? Skip this — Paul will follow up to scope it out.
-            </p>
-            <div className="space-y-3">
+          <div className="rounded-lg border border-black/15 p-4">
+            <h2 className="text-sm font-semibold">What do you need help with? *</h2>
+            <div className="mt-3 space-y-3">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#52514e]">Project name</label>
                 <input name="projectName" placeholder="e.g. Website Redesign" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold text-[#52514e]">Project type</label>
-                <select name="projectType" defaultValue="" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm">
-                  <option value="">Not sure yet</option>
+                <label className="mb-1 block text-xs font-semibold text-[#52514e]">Project type *</label>
+                <select name="projectType" required defaultValue="" className="w-full rounded-md border border-black/15 px-3 py-2 text-sm">
+                  <option value="" disabled>Select one…</option>
                   {PROJECT_TYPES.map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-xs font-semibold text-[#52514e]">Services</label>
+                <label className="mb-2 block text-xs font-semibold text-[#52514e]">Services *</label>
                 <div className="grid grid-cols-2 gap-2">
                   {TECHNOLOGIES.map((tech) => (
                     <label key={tech.key} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
@@ -75,13 +73,14 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
                     </label>
                   ))}
                 </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Select at least one.</p>
               </div>
             </div>
-          </details>
+          </div>
 
-          <button type="submit" className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
+          <SubmitButton pendingLabel="Creating…" className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
             Create my account
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </div>
