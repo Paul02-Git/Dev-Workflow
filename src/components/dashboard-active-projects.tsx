@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FolderIcon } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
 import { SquarePlatformIcon } from "@/components/platform-icon";
+import { progressColor } from "@/lib/project-display";
 
 type ActiveProjectRow = {
   id: string;
@@ -12,14 +13,6 @@ type ActiveProjectRow = {
   tasksDone: number;
   tasksTotal: number;
 };
-
-// Same "on track / caution / behind" bands used elsewhere in the app for
-// completion percentage, just green/blue/red instead of green/blue/orange.
-function progressColor(percent: number): string {
-  if (percent >= 85) return "#0ca30c";
-  if (percent >= 60) return "#2a78d6";
-  return "#d03b3b";
-}
 
 export function DashboardActiveProjects({
   projects,

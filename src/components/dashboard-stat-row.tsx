@@ -59,8 +59,8 @@ export function DashboardStatRow({
     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <StatTile
         icon={<FolderIcon className="size-5" />}
-        iconColor="#2a78d6"
-        iconBg="#e8f0fb"
+        iconColor="#e86a33"
+        iconBg="#fff3ed"
         label="Active Projects"
         value={activeProjectsCount}
         sub="View all projects →"
@@ -68,24 +68,24 @@ export function DashboardStatRow({
       />
       <StatTile
         icon={<ListChecksIcon className="size-5" />}
-        iconColor="#c9720a"
-        iconBg="#fef4de"
+        iconColor="#f59e0b"
+        iconBg="#fef3c7"
         label="My Action Queue"
         value={actionQueueCount}
         sub="Tasks to do today"
       />
       <StatTile
         icon={<ClockIcon className="size-5" />}
-        iconColor="#c9720a"
-        iconBg="#fef4de"
+        iconColor="#a16207"
+        iconBg="#fef3c7"
         label="Waiting On Client"
         value={waitingOnClientCount}
         sub={waitingOnClientCount === 0 ? "Nothing blocked" : "Projects blocked"}
       />
       <StatTile
         icon={<RocketIcon className="size-5" />}
-        iconColor="#0ca30c"
-        iconBg="#eafaea"
+        iconColor="#16a34a"
+        iconBg="#dcfce7"
         label="Ready To Launch"
         value={readyToLaunchCount}
         sub={readyToLaunchCount > 0 ? "Almost there! 🎉" : "None yet"}

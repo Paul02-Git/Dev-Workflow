@@ -113,7 +113,7 @@ export default async function ClientWorkspacePage() {
                       <form action={markClientActionDoneAction}>
                         <input type="hidden" name="projectId" value={s.project.id} />
                         <input type="hidden" name="taskId" value={action.id} />
-                        <button type="submit" className="shrink-0 rounded-md bg-[#262626] px-3 py-1.5 text-xs font-bold text-white hover:opacity-90">
+                        <button type="submit" className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover">
                           Review
                         </button>
                       </form>

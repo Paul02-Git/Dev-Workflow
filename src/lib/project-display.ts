@@ -19,13 +19,14 @@ export const PRIORITY_DOT: Record<string, string> = {
 
 export const PROJECT_COLOR_PALETTE = ["#2a78d6", "#0ca30c", "#c9720a", "#a259ff", "#d03b3b", "#0b8f8f"];
 
-// Same "on track / caution / behind" bands DashboardActiveProjects uses for
-// raw completion percentage — a distinct scale from healthState's, which
-// factors in blocked/overdue penalties, not just done/total.
+// Same 4-tier band DashboardActiveProjects uses for raw completion
+// percentage — a distinct scale from healthState's, which factors in
+// blocked/overdue penalties, not just done/total.
 export function progressColor(percent: number): string {
-  if (percent >= 85) return "#0ca30c";
-  if (percent >= 60) return "#2a78d6";
-  return "#d03b3b";
+  if (percent >= 90) return "#16a34a";
+  if (percent >= 70) return "#e86a33";
+  if (percent >= 30) return "#f59e0b";
+  return "#dc2626";
 }
 
 export function formatDate(value: Date | string): string {

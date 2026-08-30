@@ -255,7 +255,7 @@ export function PortalComments({ projects, agencyName = "your agency" }: { proje
               type="button"
               disabled={pending || !draft.trim()}
               onClick={handleSend}
-              className="rounded-md bg-[#262626] px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+              className="rounded-md bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
             >
               {pending ? "Sending…" : "Send"}
             </button>

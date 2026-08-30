@@ -47,7 +47,7 @@ export function ClientSettingsTab({ client }: { client: ClientInfo }) {
             <input name="address" defaultValue={client.address ?? ""} className="mt-1 w-full rounded-md border border-black/15 px-3 py-2 text-sm text-foreground" />
           </label>
           <div className="col-span-2 mt-1 flex items-center gap-3">
-            <button type="submit" className="rounded-md bg-[#262626] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+            <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">
               Save changes
             </button>
             {saved && <span className="text-xs font-medium text-[#0ca30c]">Saved.</span>}

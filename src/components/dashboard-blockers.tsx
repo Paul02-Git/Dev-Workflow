@@ -10,7 +10,7 @@ export function DashboardBlockers({ items, previewLimit = 3 }: { items: BlockedP
     <Card size="sm" className="h-full">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbe6e6] text-[#d03b3b]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fee2e2] text-[#dc2626]">
             <AlertCircleIcon className="size-5" />
           </span>
           <CardTitle>Blockers</CardTitle>

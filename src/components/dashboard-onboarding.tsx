@@ -28,7 +28,7 @@ export function DashboardOnboarding({ ownerName }: { ownerName: string }) {
       <div className="flex flex-wrap items-center justify-center gap-3">
         <Link
           href="/projects/new"
-          className="flex items-center gap-2 rounded-md bg-[#262626] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
         >
           <FolderPlusIcon className="size-4" />
           Create Project

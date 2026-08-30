@@ -69,7 +69,7 @@ export function ClientPortalLinkPanel({
                 }
               });
             }}
-            className="shrink-0 rounded-md bg-[#262626] px-3 py-2 text-xs font-semibold text-white hover:bg-[#262626]/90 disabled:opacity-50"
+            className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
           >
             {sending ? "Sending…" : sent ? "Sent — send another" : "Send login link"}
           </button>

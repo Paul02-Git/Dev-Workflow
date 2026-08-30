@@ -8,6 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-link: var(--link);
+  --color-primary-hover: var(--primary-hover);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
@@ -50,62 +51,66 @@
 }
 
 /*
- * Palette pulled from tryclucky.com's own CSS custom properties (--bg,
- * --ink, --comb, --gold, --shell, --pill-gray) plus colors sampled off
- * their rendered elements (--muted-foreground, --border). --comb
- * (#CC3F02, their rooster-comb red-orange) is the accent/highlight color;
- * --link uses the darker sampled brick-red (#A63A31) instead of comb
- * itself so links and highlight fills stay visually distinct from each
- * other. Buttons stay Dark Slate/black (see button.tsx) rather than
- * picking up the accent color — that separation was a deliberate,
- * standalone decision from earlier in this project, independent of which
- * hue the accent happens to be, so a palette swap doesn't silently
- * re-couple them.
+ * "Premium Fox" v2 — a defined SaaS palette replacing the ad-hoc
+ * per-round tweaks: Fox Orange (#E86A33) primary/accent throughout
+ * (buttons, links, sidebar active state — one unified accent, not split
+ * across separate tokens), Dark Fox (#D85D28, the --primary-hover token
+ * below) for hover, Charcoal (#111827) text, Warm White (#FAF8F5) page
+ * background, White cards, Slate (#6B7280) secondary text, Soft Gray
+ * (#E5E7EB) borders. Sidebar is deliberately White (#FFFFFF), distinct
+ * from the Warm White page background, with its active-item background/
+ * text (--sidebar-accent/--sidebar-accent-foreground) set to the same
+ * light-orange-tint-on-orange-text pair the sidebar component already
+ * wires active nav items to — no component changes needed for that.
+ * --radius moved to 1rem (16px cards, up from the previous ~10px).
  *
- * Deliberately NOT touched here: the app's semantic status colors (task
- * Done/green, Blocked/red, In Progress, priority Critical/Medium pills,
- * --destructive below) — those are hardcoded per-component (or, for
- * destructive, kept red on purpose — a danger action should never look
- * like just another accent-colored button), not wired to these tokens,
- * specifically so a brand palette change like this one can never silently
- * recolor what a status means. That separation was a hard-learned fix
- * earlier in this project (see PROJECT_STATUS.md) after the opposite
+ * The former dashboard "status" tile colors and the progressColor()
+ * percentage bands (src/lib/project-display.ts) were replaced with this
+ * same design's explicit bands rather than left as unrelated ad-hoc hues.
+ *
+ * Deliberately NOT touched here: per-task status colors (Done/green,
+ * Blocked/red, In Progress/blue, priority pills) and --destructive below —
+ * those are hardcoded per-component on purpose, not wired to these
+ * tokens, so a brand palette change like this one can never silently
+ * recolor what a task's status means. That separation was a hard-learned
+ * fix earlier in this project (see PROJECT_STATUS.md) after the opposite
  * mistake shipped more than once.
  */
 :root {
-  --card: #f4f4f4;
-  --card-foreground: #000000;
-  --popover: #f4f4f4;
-  --popover-foreground: #000000;
-  --primary: #cc3f02;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #e86a33;
   --primary-foreground: #ffffff;
-  --link: #a63a31;
-  --secondary: #f3f3f3;
-  --secondary-foreground: #000000;
-  --muted: #f3f3f3;
-  --muted-foreground: #6b6b6b;
-  --accent: #f3f3f3;
-  --accent-foreground: #000000;
+  --primary-hover: #d85d28;
+  --link: #e86a33;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #111827;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --accent: #f3f4f6;
+  --accent-foreground: #111827;
   --destructive: #d03b3b;
-  --border: #d5d5d5;
-  --input: #d5d5d5;
-  --ring: #cc3f02;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #e86a33;
   --chart-1: oklch(0.879 0.169 91.605);
   --chart-2: oklch(0.769 0.188 70.08);
   --chart-3: oklch(0.666 0.179 58.318);
   --chart-4: oklch(0.555 0.163 48.998);
   --chart-5: oklch(0.473 0.137 46.201);
-  --radius: 0.625rem;
-  --sidebar: #ededed;
-  --sidebar-foreground: #000000;
-  --sidebar-primary: #cc3f02;
+  --radius: 1rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #e86a33;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f3f3f3;
-  --sidebar-accent-foreground: #000000;
-  --sidebar-border: #d5d5d5;
-  --sidebar-ring: #cc3f02;
-  --background: #ededed;
-  --foreground: #000000;
+  --sidebar-accent: #fff3ed;
+  --sidebar-accent-foreground: #e86a33;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #e86a33;
+  --background: #faf8f5;
+  --foreground: #111827;
 }
 
 .dark {

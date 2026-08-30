@@ -66,7 +66,7 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
                 setGenerating(false);
               });
             }}
-            className="rounded-md bg-[#262626] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50"
           >
             {generating ? "Generating…" : "Generate this cycle's checklist"}
           </button>
@@ -132,7 +132,7 @@ export function MaintenancePlanRow({ plan }: { plan: Plan }) {
                 );
                 setEditing(false);
               }}
-              className="rounded-md bg-[#262626] px-2.5 py-1 text-xs font-semibold text-white"
+              className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground"
             >
               Save
             </button>
