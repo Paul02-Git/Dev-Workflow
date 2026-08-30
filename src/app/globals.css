@@ -93,7 +93,7 @@
   --chart-4: oklch(0.555 0.163 48.998);
   --chart-5: oklch(0.473 0.137 46.201);
   --radius: 0.625rem;
-  --sidebar: #f9fafb;
+  --sidebar: #ededed;
   --sidebar-foreground: #111827;
   --sidebar-primary: #111827;
   --sidebar-primary-foreground: #ffffff;
@@ -101,7 +101,7 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5e7eb;
   --sidebar-ring: #111827;
-  --background: #f9fafb;
+  --background: #ededed;
   --foreground: #111827;
 }
 
