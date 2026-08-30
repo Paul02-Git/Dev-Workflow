@@ -50,43 +50,46 @@
 }
 
 /*
- * "Nike" monochrome palette — pure black/white/gray, no color accent at
- * all. --primary (buttons, fills, progress, active/highlighted states)
- * and --link (links, clickable text) both drop from orange/blue down to
- * near-black and dark gray respectively, so the whole app reads as one
- * tonal system instead of a two-hue brand. Background/card/border/muted/
- * foreground were already pure Tailwind gray-scale from the previous
- * palette (Dark Slate is gray-900, Light Gray is gray-50) and needed no
- * change — this really is just retiring the two accent hues.
+ * Palette pulled from tryclucky.com's own CSS custom properties (--bg,
+ * --ink, --comb, --gold, --shell, --pill-gray) plus colors sampled off
+ * their rendered elements (--muted-foreground, --border). --comb
+ * (#CC3F02, their rooster-comb red-orange) is the accent/highlight color;
+ * --link uses the darker sampled brick-red (#A63A31) instead of comb
+ * itself so links and highlight fills stay visually distinct from each
+ * other. Buttons stay Dark Slate/black (see button.tsx) rather than
+ * picking up the accent color — that separation was a deliberate,
+ * standalone decision from earlier in this project, independent of which
+ * hue the accent happens to be, so a palette swap doesn't silently
+ * re-couple them.
  *
  * Deliberately NOT touched here: the app's semantic status colors (task
  * Done/green, Blocked/red, In Progress, priority Critical/Medium pills,
  * --destructive below) — those are hardcoded per-component (or, for
  * destructive, kept red on purpose — a danger action should never look
- * like just another gray button), not wired to these tokens, specifically
- * so a brand palette change like this one can never silently recolor what
- * a status means. That separation was a hard-learned fix earlier in this
- * project (see PROJECT_STATUS.md) after the opposite mistake shipped more
- * than once.
+ * like just another accent-colored button), not wired to these tokens,
+ * specifically so a brand palette change like this one can never silently
+ * recolor what a status means. That separation was a hard-learned fix
+ * earlier in this project (see PROJECT_STATUS.md) after the opposite
+ * mistake shipped more than once.
  */
 :root {
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --popover: #ffffff;
-  --popover-foreground: #111827;
-  --primary: #111827;
+  --card: #fff8ec;
+  --card-foreground: #000000;
+  --popover: #fff8ec;
+  --popover-foreground: #000000;
+  --primary: #cc3f02;
   --primary-foreground: #ffffff;
-  --link: #404040;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #111827;
-  --muted: #f3f4f6;
-  --muted-foreground: #6b7280;
-  --accent: #f3f4f6;
-  --accent-foreground: #111827;
+  --link: #a63a31;
+  --secondary: #f3f3f3;
+  --secondary-foreground: #000000;
+  --muted: #f3f3f3;
+  --muted-foreground: #6b6b6b;
+  --accent: #f3f3f3;
+  --accent-foreground: #000000;
   --destructive: #d03b3b;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #111827;
+  --border: #d5d5d5;
+  --input: #d5d5d5;
+  --ring: #cc3f02;
   --chart-1: oklch(0.879 0.169 91.605);
   --chart-2: oklch(0.769 0.188 70.08);
   --chart-3: oklch(0.666 0.179 58.318);
@@ -94,15 +97,15 @@
   --chart-5: oklch(0.473 0.137 46.201);
   --radius: 0.625rem;
   --sidebar: #ededed;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #111827;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #cc3f02;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f3f4f6;
-  --sidebar-accent-foreground: #111827;
-  --sidebar-border: #e5e7eb;
-  --sidebar-ring: #111827;
+  --sidebar-accent: #f3f3f3;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #d5d5d5;
+  --sidebar-ring: #cc3f02;
   --background: #ededed;
-  --foreground: #111827;
+  --foreground: #000000;
 }
 
 .dark {
