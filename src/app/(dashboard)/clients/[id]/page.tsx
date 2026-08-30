@@ -27,10 +27,15 @@ function daysToLaunch(targetLaunchDate: Date | string | null): number | null {
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { organizationId } = await requireAuth();
   const { id } = await params;
-  const client = await getClient(id, organizationId);
+  // All three queries only need id/organizationId, not each other's
+  // result — fired together instead of getClient() being awaited alone
+  // before the other two start, so their round trips overlap.
+  const [client, allTasks, switcherProjects] = await Promise.all([
+    getClient(id, organizationId),
+    listAllTasks(organizationId),
+    listProjectsForSwitcher(organizationId),
+  ]);
   if (!client) notFound();
-
-  const [allTasks, switcherProjects] = await Promise.all([listAllTasks(organizationId), listProjectsForSwitcher(organizationId)]);
 
   const technologiesByProject = new Map(switcherProjects.map((p) => [p.id, p.technologyNames]));
   const createdAtByProject = new Map(client.projects.map((p) => [p.id, p.createdAt]));

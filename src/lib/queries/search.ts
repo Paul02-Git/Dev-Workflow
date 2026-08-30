@@ -16,8 +16,16 @@ const RESULT_LIMIT = 8;
  * Simple ILIKE search across clients, projects, and top-level tasks.
  * Good enough at the freelancer's real scale (dozens, not millions, of
  * rows) — no full-text index needed.
+ *
+ * organizationId is a required filter, not optional — this used to have no
+ * tenant scoping at all, meaning any organization's search (including the
+ * command palette's live search-as-you-type) could return other
+ * organizations' client names, project names/domains, and task titles.
+ * RLS doesn't cover this: every table has RLS enabled with zero policies,
+ * and Drizzle connects as the `postgres` role, which bypasses RLS by
+ * design — this filter is the only thing actually scoping the query.
  */
-export async function searchAll(rawQuery: string): Promise<SearchResult[]> {
+export async function searchAll(rawQuery: string, organizationId: string): Promise<SearchResult[]> {
   const query = rawQuery.trim();
   if (!query) return [];
   const pattern = `%${query}%`;
@@ -26,7 +34,7 @@ export async function searchAll(rawQuery: string): Promise<SearchResult[]> {
     db
       .select({ id: clients.id, name: clients.name, company: clients.company })
       .from(clients)
-      .where(or(ilike(clients.name, pattern), ilike(clients.company, pattern)))
+      .where(and(eq(clients.organizationId, organizationId), or(ilike(clients.name, pattern), ilike(clients.company, pattern))))
       .limit(RESULT_LIMIT),
     db
       .select({
@@ -37,7 +45,9 @@ export async function searchAll(rawQuery: string): Promise<SearchResult[]> {
       })
       .from(projects)
       .innerJoin(clients, eq(projects.clientId, clients.id))
-      .where(or(ilike(projects.name, pattern), ilike(projects.domain, pattern)))
+      .where(
+        and(eq(projects.organizationId, organizationId), or(ilike(projects.name, pattern), ilike(projects.domain, pattern)))
+      )
       .limit(RESULT_LIMIT),
     db
       .select({
@@ -50,7 +60,7 @@ export async function searchAll(rawQuery: string): Promise<SearchResult[]> {
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
       .innerJoin(stages, eq(tasks.stageId, stages.id))
-      .where(and(ilike(tasks.title, pattern), isNull(tasks.parentTaskId)))
+      .where(and(eq(tasks.organizationId, organizationId), ilike(tasks.title, pattern), isNull(tasks.parentTaskId)))
       .limit(RESULT_LIMIT),
   ]);
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { searchAll } from "@/lib/queries/search";
+import { requireAuth } from "@/lib/auth";
 
 const TYPE_LABELS: Record<string, string> = {
   client: "Client",
@@ -12,9 +13,10 @@ export default async function SearchPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const { organizationId } = await requireAuth();
   const { q } = await searchParams;
   const query = q ?? "";
-  const results = query ? await searchAll(query) : [];
+  const results = query ? await searchAll(query, organizationId) : [];
 
   return (
     <div className="max-w-3xl">

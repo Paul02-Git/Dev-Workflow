@@ -112,54 +112,58 @@ export const organizations = pgTable("organizations", {
 // Core: clients, projects, technologies
 // ---------------------------------------------------------------------------
 
-export const clients = pgTable("clients", {
-  id: cuid(),
-  // Nullable until the contract step — see the organizations block above.
-  organizationId: text("organization_id").references(() => organizations.id),
-  name: text("name").notNull(),
-  company: text("company"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  address: text("address"),
-  notes: text("notes"),
-  // Magic-link token (see generateClientMagicLink / verifyClientMagicLink
-  // in src/lib/queries/clients.ts) — this is how a client gets into
-  // /portal, every time, not just first setup. Minted fresh on each
-  // request (invalidating any prior link still sitting in an inbox).
-  // Reusable until it expires, not single-use — email security scanners
-  // (Gmail/Workspace link scanning, Outlook Safe Links) routinely GET
-  // links in an email body before the recipient opens it, which would
-  // silently burn a one-time token before a real click happened.
-  // inviteTokenExpiresAt is what actually limits it; a token past its
-  // expiry is treated as if it doesn't exist.
-  inviteToken: text("invite_token").unique(),
-  inviteTokenExpiresAt: timestamp("invite_token_expires_at"),
-  // Short 6-digit alternative to clicking the link — minted alongside the
-  // token on every request, but only ever emailed in its own separate,
-  // code-only email if the client explicitly asks for it (opening on a
-  // different device); the default link email never includes it. Reusable
-  // until the same expiry as the token above, for the same scanner-safety
-  // reason. Not globally unique on its own (only 1M possible values) —
-  // verification is always scoped by the client's contactEmail first,
-  // same as the token-less magic-link request flow, and rate-limited the
-  // same way login attempts are.
-  inviteCode: text("invite_code"),
-  // Retired (2026-08-24, replaced by magic links above) — left in place,
-  // unused, rather than dropped: the two clients who'd already set a
-  // password both have a contactEmail on file so nothing depended on
-  // these surviving, but this app has a standing habit of not dropping
-  // columns until a change has proven out (see agency_settings' own
-  // history). loginSlug/passwordHash are never written or read anymore.
-  loginSlug: text("login_slug").unique(),
-  passwordHash: text("password_hash"),
-  // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the
-  // public intake form) — lets Paul spot self-service signups at a glance
-  // without needing an activity_logs entry, which requires a projectId
-  // this client may not have yet.
-  source: text("source").notNull().default("manual"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const clients = pgTable(
+  "clients",
+  {
+    id: cuid(),
+    // Nullable until the contract step — see the organizations block above.
+    organizationId: text("organization_id").references(() => organizations.id),
+    name: text("name").notNull(),
+    company: text("company"),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    address: text("address"),
+    notes: text("notes"),
+    // Magic-link token (see generateClientMagicLink / verifyClientMagicLink
+    // in src/lib/queries/clients.ts) — this is how a client gets into
+    // /portal, every time, not just first setup. Minted fresh on each
+    // request (invalidating any prior link still sitting in an inbox).
+    // Reusable until it expires, not single-use — email security scanners
+    // (Gmail/Workspace link scanning, Outlook Safe Links) routinely GET
+    // links in an email body before the recipient opens it, which would
+    // silently burn a one-time token before a real click happened.
+    // inviteTokenExpiresAt is what actually limits it; a token past its
+    // expiry is treated as if it doesn't exist.
+    inviteToken: text("invite_token").unique(),
+    inviteTokenExpiresAt: timestamp("invite_token_expires_at"),
+    // Short 6-digit alternative to clicking the link — minted alongside the
+    // token on every request, but only ever emailed in its own separate,
+    // code-only email if the client explicitly asks for it (opening on a
+    // different device); the default link email never includes it. Reusable
+    // until the same expiry as the token above, for the same scanner-safety
+    // reason. Not globally unique on its own (only 1M possible values) —
+    // verification is always scoped by the client's contactEmail first,
+    // same as the token-less magic-link request flow, and rate-limited the
+    // same way login attempts are.
+    inviteCode: text("invite_code"),
+    // Retired (2026-08-24, replaced by magic links above) — left in place,
+    // unused, rather than dropped: the two clients who'd already set a
+    // password both have a contactEmail on file so nothing depended on
+    // these surviving, but this app has a standing habit of not dropping
+    // columns until a change has proven out (see agency_settings' own
+    // history). loginSlug/passwordHash are never written or read anymore.
+    loginSlug: text("login_slug").unique(),
+    passwordHash: text("password_hash"),
+    // 'manual' (Paul entered them) vs 'intake' (they self-submitted via the
+    // public intake form) — lets Paul spot self-service signups at a glance
+    // without needing an activity_logs entry, which requires a projectId
+    // this client may not have yet.
+    source: text("source").notNull().default("manual"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("client_organization_idx").on(t.organizationId)]
+);
 
 export const projects = pgTable(
   "projects",
@@ -189,7 +193,11 @@ export const projects = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     launchedAt: timestamp("launched_at"),
   },
-  (t) => [uniqueIndex("project_handoff_token_unique").on(t.handoffToken)]
+  (t) => [
+    uniqueIndex("project_handoff_token_unique").on(t.handoffToken),
+    index("project_organization_idx").on(t.organizationId),
+    index("project_client_idx").on(t.clientId),
+  ]
 );
 
 export const technologies = pgTable("technologies", {
@@ -210,7 +218,10 @@ export const projectTechnologies = pgTable(
       .notNull()
       .references(() => technologies.id),
   },
-  (t) => [primaryKey({ columns: [t.projectId, t.technologyId] })]
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.technologyId] }),
+    index("project_technology_organization_idx").on(t.organizationId),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -284,6 +295,7 @@ export const tasks = pgTable(
   (t) => [
     index("task_project_stage_idx").on(t.projectId, t.stageId),
     index("task_project_canonical_idx").on(t.projectId, t.canonicalKey),
+    index("task_organization_idx").on(t.organizationId),
   ]
 );
 
@@ -301,6 +313,7 @@ export const taskDependencies = pgTable(
   },
   (t) => [
     uniqueIndex("task_dependency_unique").on(t.taskId, t.dependsOnTaskId),
+    index("task_dependency_organization_idx").on(t.organizationId),
   ]
 );
 
@@ -372,31 +385,35 @@ export const attachments = pgTable(
   ]
 );
 
-export const accessItems = pgTable("access_items", {
-  id: cuid(),
-  organizationId: text("organization_id").references(() => organizations.id),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  status: accessStatusEnum("status").notNull().default("NOT_REQUESTED"),
-  url: text("url"),
-  // What role to request / was granted (Administrator, Editor, Owner...).
-  role: text("role"),
-  // What to actually ask the client for — auto-suggested per technology
-  // (see src/data/access-item-presets.ts), editable per project.
-  instructions: text("instructions"),
-  grantedAt: timestamp("granted_at"),
-  username: text("username"),
-  // AES-256-GCM ciphertext (base64), never plaintext — see src/lib/crypto.ts.
-  // Secondary path now: most platforms are invite-based, not credential-
-  // based (see status/role/instructions above) — this covers the real
-  // exceptions (a shared inbox, WP admin before ownership handoff).
-  passwordEncrypted: text("password_encrypted"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const accessItems = pgTable(
+  "access_items",
+  {
+    id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    status: accessStatusEnum("status").notNull().default("NOT_REQUESTED"),
+    url: text("url"),
+    // What role to request / was granted (Administrator, Editor, Owner...).
+    role: text("role"),
+    // What to actually ask the client for — auto-suggested per technology
+    // (see src/data/access-item-presets.ts), editable per project.
+    instructions: text("instructions"),
+    grantedAt: timestamp("granted_at"),
+    username: text("username"),
+    // AES-256-GCM ciphertext (base64), never plaintext — see src/lib/crypto.ts.
+    // Secondary path now: most platforms are invite-based, not credential-
+    // based (see status/role/instructions above) — this covers the real
+    // exceptions (a shared inbox, WP admin before ownership handoff).
+    passwordEncrypted: text("password_encrypted"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("access_item_project_idx").on(t.projectId), index("access_item_organization_idx").on(t.organizationId)]
+);
 
 // Backs login rate limiting. DB-backed rather than in-memory — an
 // in-memory counter would silently reset on every cold start if this ever
@@ -429,28 +446,35 @@ export const loginAttempts = pgTable("login_attempts", {
 // post_launch stage, tags them with a dated tag for history, and advances
 // nextDueAt. No real cron runs this; it's surfaced as a due list on the
 // dashboard that Paul triggers by hand.
-export const maintenancePlans = pgTable("maintenance_plans", {
-  id: cuid(),
-  organizationId: text("organization_id").references(() => organizations.id),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  cadenceDays: integer("cadence_days").notNull().default(30),
-  // Newline-separated checklist item titles.
-  checklistTemplate: text("checklist_template").notNull(),
-  nextDueAt: timestamp("next_due_at").notNull(),
-  lastGeneratedAt: timestamp("last_generated_at"),
-  isActive: boolean("is_active").notNull().default(true),
-  // Whether the client has paid for the current cycle — manually toggled,
-  // there's no billing/invoicing integration to derive this from. Reset to
-  // false every time generateMaintenanceRun() advances to a new cycle, so
-  // a paid cycle doesn't silently read as still-paid once a new invoice is
-  // actually due.
-  isPaid: boolean("is_paid").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const maintenancePlans = pgTable(
+  "maintenance_plans",
+  {
+    id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    cadenceDays: integer("cadence_days").notNull().default(30),
+    // Newline-separated checklist item titles.
+    checklistTemplate: text("checklist_template").notNull(),
+    nextDueAt: timestamp("next_due_at").notNull(),
+    lastGeneratedAt: timestamp("last_generated_at"),
+    isActive: boolean("is_active").notNull().default(true),
+    // Whether the client has paid for the current cycle — manually toggled,
+    // there's no billing/invoicing integration to derive this from. Reset to
+    // false every time generateMaintenanceRun() advances to a new cycle, so
+    // a paid cycle doesn't silently read as still-paid once a new invoice is
+    // actually due.
+    isPaid: boolean("is_paid").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("maintenance_plan_organization_idx").on(t.organizationId),
+    index("maintenance_plan_project_idx").on(t.projectId),
+  ]
+);
 
 export const activityLogs = pgTable(
   "activity_logs",
@@ -472,7 +496,10 @@ export const activityLogs = pgTable(
     actorName: text("actor_name").notNull().default("Paul"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("activity_log_project_idx").on(t.projectId)]
+  (t) => [
+    index("activity_log_project_idx").on(t.projectId),
+    index("activity_log_organization_idx").on(t.organizationId),
+  ]
 );
 
 // A simple two-way thread per project, readable/postable from both the

@@ -468,7 +468,8 @@ export async function deleteAccessItemAction(accessItemId: string) {
 }
 
 export async function searchAction(query: string): Promise<SearchResult[]> {
-  return searchAll(query);
+  const { organizationId } = await requireAuth();
+  return searchAll(query, organizationId);
 }
 
 export async function bulkUpdateTaskStatusAction(taskIds: string[], status: string) {
