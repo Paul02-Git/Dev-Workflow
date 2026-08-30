@@ -110,7 +110,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         </div>
         <Link
           href={`/projects/new?clientId=${client.id}`}
-          className="shrink-0 rounded-md bg-[#111827] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className="shrink-0 rounded-md bg-[#262626] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           + New project for {client.name}
         </Link>

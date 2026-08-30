@@ -73,9 +73,9 @@
  * mistake shipped more than once.
  */
 :root {
-  --card: #fff8ec;
+  --card: #f4f4f4;
   --card-foreground: #000000;
-  --popover: #fff8ec;
+  --popover: #f4f4f4;
   --popover-foreground: #000000;
   --primary: #cc3f02;
   --primary-foreground: #ffffff;

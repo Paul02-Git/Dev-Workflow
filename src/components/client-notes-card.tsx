@@ -60,7 +60,7 @@ export function ClientNotesCard({ projectId, notes }: { projectId: string; notes
               type="button"
               disabled={pending || !draft.trim()}
               onClick={handleAdd}
-              className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              className="rounded-md bg-[#262626] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
             >
               {pending ? "Saving…" : "Save note"}
             </button>

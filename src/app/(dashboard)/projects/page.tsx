@@ -182,7 +182,7 @@ export default async function ProjectsPage({
         </div>
         <Link
           href="/projects/new"
-          className="shrink-0 rounded-md bg-[#111827] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
+          className="shrink-0 rounded-md bg-[#262626] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           + New Project
         </Link>

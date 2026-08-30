@@ -13,7 +13,7 @@ const buttonVariants = cva(
         // dark, neutral primary CTAs), while Fox Orange stays the brand
         // accent color everywhere else (links, active states, progress
         // bars) rather than being the color of every clickable button.
-        default: "bg-[#111827] text-white hover:bg-[#111827]/80",
+        default: "bg-[#262626] text-white hover:bg-[#262626]/80",
         outline:
           "border-border bg-input/30 hover:bg-input/50 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         secondary:

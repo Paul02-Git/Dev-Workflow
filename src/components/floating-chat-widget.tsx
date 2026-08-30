@@ -265,7 +265,7 @@ export function FloatingChatWidget({
                 type="button"
                 disabled={pending || !draft.trim()}
                 onClick={handleSend}
-                className="rounded-md bg-[#111827] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#111827]/90 disabled:opacity-50"
+                className="rounded-md bg-[#262626] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#262626]/90 disabled:opacity-50"
               >
                 {pending ? "Sending…" : "Send"}
               </button>
@@ -284,7 +284,7 @@ export function FloatingChatWidget({
           })
         }
         aria-label={open ? "Close chat" : "Open chat"}
-        className="fixed bottom-6 right-6 z-50 flex size-14 items-center justify-center rounded-full bg-[#111827] text-white shadow-lg transition-transform hover:scale-105"
+        className="fixed bottom-6 right-6 z-50 flex size-14 items-center justify-center rounded-full bg-[#262626] text-white shadow-lg transition-transform hover:scale-105"
       >
         {open ? <XIcon className="size-6" /> : <MessageCircleIcon className="size-6" />}
         {!open && unread > 0 && (

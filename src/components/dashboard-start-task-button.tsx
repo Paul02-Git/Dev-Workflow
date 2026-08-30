@@ -18,7 +18,7 @@ export function DashboardStartTaskButton({ taskId, projectId }: { taskId: string
           router.push(`/projects/${projectId}?tab=tasks`);
         });
       }}
-      className="shrink-0 rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+      className="shrink-0 rounded-md bg-[#262626] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
     >
       {pending ? "Starting…" : "Start Task"}
     </button>

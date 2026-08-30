@@ -212,7 +212,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
                 )}
 
                 <div className="flex items-center gap-2 pt-1">
-                  <button type="submit" className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white">
+                  <button type="submit" className="rounded-md bg-[#262626] px-3 py-1.5 text-xs font-semibold text-white">
                     Add
                   </button>
                   <button
