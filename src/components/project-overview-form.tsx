@@ -139,7 +139,7 @@ export function ProjectOverviewForm({
               className="rounded border border-black/15 px-2 py-1 text-sm"
             />
           </label>
-          <button type="submit" className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+          <button type="submit" className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white">
             Save
           </button>
           <button

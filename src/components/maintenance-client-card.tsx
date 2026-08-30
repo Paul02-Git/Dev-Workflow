@@ -59,7 +59,7 @@ export function MaintenanceClientCard({ clientName, plans }: { clientName: strin
           {soleProjectMatchesClient && (
             <Link
               href={`/projects/${projectGroups[0][1][0].projectId}`}
-              className="flex items-center gap-1 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
+              className="flex items-center gap-1 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-link hover:bg-muted"
             >
               View project <ArrowUpRightIcon className="size-3" />
             </Link>
@@ -78,7 +78,7 @@ export function MaintenanceClientCard({ clientName, plans }: { clientName: strin
                 </div>
                 <Link
                   href={`/projects/${projectPlans[0].projectId}`}
-                  className="flex shrink-0 items-center gap-1 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-link hover:bg-muted"
                 >
                   View project <ArrowUpRightIcon className="size-3" />
                 </Link>

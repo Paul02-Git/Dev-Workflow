@@ -117,17 +117,17 @@ export function ClientProfileCard({
             {company && <p className="text-sm text-muted-foreground">{company}</p>}
             <div className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
               {contactEmail && (
-                <a href={`mailto:${contactEmail}`} className="flex items-center gap-1.5 hover:text-primary">
+                <a href={`mailto:${contactEmail}`} className="flex items-center gap-1.5 hover:text-link">
                   <MailIcon className="size-3.5 shrink-0" /> {contactEmail}
                 </a>
               )}
               {contactPhone && (
-                <a href={`tel:${contactPhone}`} className="flex items-center gap-1.5 hover:text-primary">
+                <a href={`tel:${contactPhone}`} className="flex items-center gap-1.5 hover:text-link">
                   <PhoneIcon className="size-3.5 shrink-0" /> {contactPhone}
                 </a>
               )}
               {websiteHref && (
-                <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary">
+                <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-link">
                   <GlobeIcon className="size-3.5 shrink-0" /> {domain}
                   <ExternalLinkIcon className="size-3 shrink-0" />
                 </a>

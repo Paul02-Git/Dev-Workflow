@@ -75,7 +75,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
         <button
           type="button"
           onClick={() => setAddMode("picker")}
-          className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
+          className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-link hover:bg-muted"
         >
           + Add platform
         </button>
@@ -132,7 +132,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
                 <button
                   type="button"
                   onClick={() => setAddMode("custom")}
-                  className="rounded-full border border-dashed border-black/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
+                  className="rounded-full border border-dashed border-black/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-link hover:text-link"
                 >
                   + Custom platform…
                 </button>
@@ -212,7 +212,7 @@ export function AccessItemsPanel({ projectId, items }: { projectId: string; item
                 )}
 
                 <div className="flex items-center gap-2 pt-1">
-                  <button type="submit" className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+                  <button type="submit" className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white">
                     Add
                   </button>
                   <button

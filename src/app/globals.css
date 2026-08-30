@@ -7,6 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-link: var(--link);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
@@ -49,16 +50,18 @@
 }
 
 /*
- * "Premium Fox" brand palette — Fox Orange primary, Dark Charcoal text,
- * Soft Cream page background, Warm Gray borders, White surfaces. Warm Gray
- * (#D6D3D1) and Dark Charcoal (#111827) are literally Tailwind's own
- * stone-300 and gray-900 — the in-between shades below (secondary/muted/
- * accent surfaces, muted text) borrow neighboring stone-scale values
- * instead of inventing new hues, so everything stays one coherent family.
+ * "Fox + Blue Accent" brand palette — Fox Orange (#EA580C) for fills,
+ * progress, and active/highlighted states; Royal Blue (#2563EB, the
+ * separate --link token below) for links and clickable text, so the two
+ * accent colors never compete for the same element; Dark Slate (#111827)
+ * text; Light Gray (#F9FAFB) page background; White surfaces. Border/
+ * muted/secondary surfaces below borrow neighboring shades from
+ * Tailwind's own gray scale (Dark Slate is literally gray-900, Light Gray
+ * is literally gray-50) to stay one coherent cool-neutral family.
  *
  * Deliberately NOT touched here: the app's semantic status colors (task
- * Done/green, Blocked/red, In Progress/blue, priority Critical/Medium
- * pills) — those are hardcoded per-component, not wired to these tokens,
+ * Done/green, Blocked/red, In Progress, priority Critical/Medium pills) —
+ * those are hardcoded per-component, not wired to these tokens,
  * specifically so a brand palette change like this one can never silently
  * recolor what a task's status means. That separation was a hard-learned
  * fix earlier in this project (see PROJECT_STATUS.md) after the opposite
@@ -69,33 +72,34 @@
   --card-foreground: #111827;
   --popover: #ffffff;
   --popover-foreground: #111827;
-  --primary: #e86a33;
+  --primary: #ea580c;
   --primary-foreground: #ffffff;
-  --secondary: #f5f5f4;
+  --link: #2563eb;
+  --secondary: #f3f4f6;
   --secondary-foreground: #111827;
-  --muted: #f5f5f4;
-  --muted-foreground: #78716c;
-  --accent: #f5f5f4;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --accent: #f3f4f6;
   --accent-foreground: #111827;
   --destructive: #d03b3b;
-  --border: #d6d3d1;
-  --input: #d6d3d1;
-  --ring: #e86a33;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #ea580c;
   --chart-1: oklch(0.879 0.169 91.605);
   --chart-2: oklch(0.769 0.188 70.08);
   --chart-3: oklch(0.666 0.179 58.318);
   --chart-4: oklch(0.555 0.163 48.998);
   --chart-5: oklch(0.473 0.137 46.201);
   --radius: 0.625rem;
-  --sidebar: #faf7f2;
+  --sidebar: #f9fafb;
   --sidebar-foreground: #111827;
-  --sidebar-primary: #e86a33;
+  --sidebar-primary: #ea580c;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f5f5f4;
+  --sidebar-accent: #f3f4f6;
   --sidebar-accent-foreground: #111827;
-  --sidebar-border: #d6d3d1;
-  --sidebar-ring: #e86a33;
-  --background: #faf7f2;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #ea580c;
+  --background: #f9fafb;
   --foreground: #111827;
 }
 

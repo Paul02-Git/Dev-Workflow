@@ -18,7 +18,7 @@ export function GenerateMaintenanceButton({ planId }: { planId: string }) {
         await generateMaintenanceRunAction(planId);
         setDone(true);
       })}
-      className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground"
+      className="shrink-0 rounded-md bg-[#111827] px-2.5 py-1 text-xs font-semibold text-white"
     >
       Generate checklist
     </button>

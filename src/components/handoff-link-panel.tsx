@@ -52,7 +52,7 @@ export function HandoffLinkPanel({
           <Link
             href={path!}
             target="_blank"
-            className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-link hover:underline"
           >
             {relativeTime(lastViewedAt)} <ExternalLinkIcon className="size-3" />
           </Link>
@@ -93,7 +93,7 @@ export function HandoffLinkPanel({
               setGenerating(false);
             });
           }}
-          className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="shrink-0 rounded-md bg-[#111827] px-3 py-2 text-xs font-semibold text-white hover:bg-[#111827]/90 disabled:opacity-50"
         >
           {currentToken ? (copied ? "Copied ✓" : "Copy link") : generating ? "Generating…" : "Generate link"}
         </button>
@@ -104,7 +104,7 @@ export function HandoffLinkPanel({
           <Link
             href={path!}
             target="_blank"
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-link hover:underline"
           >
 Open handoff page <ArrowRightIcon className="size-3" />
           </Link>

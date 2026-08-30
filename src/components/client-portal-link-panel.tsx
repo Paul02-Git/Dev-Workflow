@@ -69,7 +69,7 @@ export function ClientPortalLinkPanel({
                 }
               });
             }}
-            className="shrink-0 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="shrink-0 rounded-md bg-[#111827] px-3 py-2 text-xs font-semibold text-white hover:bg-[#111827]/90 disabled:opacity-50"
           >
             {sending ? "Sending…" : sent ? "Sent — send another" : "Send login link"}
           </button>
@@ -81,7 +81,7 @@ export function ClientPortalLinkPanel({
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}
-              className="shrink-0 rounded-md border border-black/15 px-2.5 py-2 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary"
+              className="shrink-0 rounded-md border border-black/15 px-2.5 py-2 text-xs font-semibold text-muted-foreground hover:border-link hover:text-link"
             >
               {copied ? "Copied ✓" : "Copy that link"}
             </button>

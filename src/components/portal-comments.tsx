@@ -244,7 +244,7 @@ export function PortalComments({ projects, agencyName = "your agency" }: { proje
             onClick={() => fileInputRef.current?.click()}
             aria-label="Attach a file"
             title="Attach a file"
-            className="flex items-center gap-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-link disabled:opacity-50"
           >
             <PaperclipIcon className="size-4" />
             {uploading && <span className="text-xs">Uploading…</span>}
@@ -255,7 +255,7 @@ export function PortalComments({ projects, agencyName = "your agency" }: { proje
               type="button"
               disabled={pending || !draft.trim()}
               onClick={handleSend}
-              className="rounded-md bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              className="rounded-md bg-[#111827] px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
             >
               {pending ? "Sending…" : "Send"}
             </button>

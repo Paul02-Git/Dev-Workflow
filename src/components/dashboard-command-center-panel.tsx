@@ -95,7 +95,7 @@ export function DashboardCommandCenterPanel({
           <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Project Command Center</span>
           <p className="mt-2 text-sm text-muted-foreground">
             No projects yet.{" "}
-            <Link href="/projects/new" className="text-primary hover:underline">
+            <Link href="/projects/new" className="text-link hover:underline">
               Create one
             </Link>
             .
@@ -172,7 +172,7 @@ export function DashboardCommandCenterPanel({
           <CardHeader>
             <CardTitle className="text-sm font-bold">Links & Access</CardTitle>
             <CardAction>
-              <Link href={`/projects/${project.id}`} className="text-sm font-semibold text-primary hover:underline">
+              <Link href={`/projects/${project.id}`} className="text-sm font-semibold text-link hover:underline">
                 Edit
               </Link>
             </CardAction>
@@ -217,7 +217,7 @@ export function DashboardCommandCenterPanel({
           <CardHeader>
             <CardTitle className="text-sm font-bold">Integration Verification</CardTitle>
             <CardAction>
-              <Link href={`/projects/${project.id}`} className="text-sm font-semibold text-primary hover:underline">
+              <Link href={`/projects/${project.id}`} className="text-sm font-semibold text-link hover:underline">
                 View All
               </Link>
             </CardAction>

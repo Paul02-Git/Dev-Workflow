@@ -64,7 +64,7 @@ export function AddTaskForm({
       </label>
       <button
         type="submit"
-        className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+        className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white"
       >
         Add
       </button>

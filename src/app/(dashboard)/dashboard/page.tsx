@@ -138,7 +138,7 @@ export default async function DashboardPage({
           <NotificationsBell activity={clientActivity} />
           <Link
             href="/projects/new"
-            className="shrink-0 rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
+            className="shrink-0 rounded-md bg-[#111827] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
             + New Project
           </Link>
@@ -176,7 +176,7 @@ export default async function DashboardPage({
                       </div>
                       <Link
                         href={`/projects/${p.projectId}?tab=tasks#launch-checklist`}
-                        className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-muted"
+                        className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1.5 text-xs font-semibold text-link hover:bg-muted"
                       >
                         View checklist
                       </Link>

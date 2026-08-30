@@ -55,7 +55,7 @@ export function TaskDetailsToggle({
     <Dialog>
       <DialogTrigger
         render={
-          <button type="button" className="text-xs font-medium text-primary hover:underline">
+          <button type="button" className="text-xs font-medium text-link hover:underline">
             {hasDetails ? "Details •" : "Add details"}
           </button>
         }
@@ -135,7 +135,7 @@ function TaskDetailsForm({
                   href={a.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="truncate text-primary hover:underline"
+                  className="truncate text-link hover:underline"
                 >
                   {a.label || a.url}
                 </a>

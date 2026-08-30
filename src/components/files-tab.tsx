@@ -288,7 +288,7 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
                           href={f.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="truncate font-medium text-foreground hover:text-primary hover:underline"
+                          className="truncate font-medium text-foreground hover:text-link hover:underline"
                         >
                           {f.label || "Untitled file"}
                         </a>

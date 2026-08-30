@@ -20,7 +20,7 @@ export default async function LoginPage({
       footer={
         <>
           New agency?{" "}
-          <Link href="/signup" className="font-semibold text-primary hover:underline">
+          <Link href="/signup" className="font-semibold text-link hover:underline">
             Create an account
           </Link>
         </>

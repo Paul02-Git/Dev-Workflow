@@ -92,7 +92,7 @@ export function ProjectCard({ project }: { project: ProjectCardData }) {
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <h3 className="truncate text-sm font-semibold text-foreground group-hover:text-primary">{name}</h3>
+              <h3 className="truncate text-sm font-semibold text-foreground group-hover:text-link">{name}</h3>
               <ArrowUpRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
             </div>
             <p className="truncate text-xs text-muted-foreground">

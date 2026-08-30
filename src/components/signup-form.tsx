@@ -52,7 +52,7 @@ export function SignupForm({ error, defaultEmail }: { error?: string; defaultEma
         />
       </div>
       {error && <p className="text-xs font-medium text-[#d03b3b]">{ERROR_MESSAGES[error] ?? "Something went wrong. Please try again."}</p>}
-      <SubmitButton pendingLabel="Creating…" className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60">
+      <SubmitButton pendingLabel="Creating…" className="w-full rounded-md bg-[#111827] py-2.5 text-sm font-semibold text-white disabled:opacity-60">
         Create my agency
       </SubmitButton>
     </form>

@@ -47,7 +47,7 @@ export function IntakeLinkPanel({ token }: { token: string | null }) {
               setGenerating(false);
             });
           }}
-          className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className="shrink-0 rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#111827]/90 disabled:opacity-50"
         >
           {currentToken ? (copied ? "Copied ✓" : "Copy link") : generating ? "Generating…" : "Generate link"}
         </button>

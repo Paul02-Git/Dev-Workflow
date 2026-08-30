@@ -145,7 +145,7 @@ export function PortalFiles({
         <div className="divide-y divide-black/10">
           {files.map((f) => (
             <div key={f.id} className="group flex items-center justify-between gap-2 py-2.5 text-sm">
-              <a href={f.url ?? undefined} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate font-semibold hover:text-primary hover:underline">
+              <a href={f.url ?? undefined} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate font-semibold hover:text-link hover:underline">
                 {f.label ?? "Untitled"}
               </a>
               <div className="flex shrink-0 items-center gap-2">

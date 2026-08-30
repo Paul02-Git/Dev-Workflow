@@ -37,7 +37,7 @@ export default async function AdminOrganizationPage({ params }: { params: Promis
 
   return (
     <div className="max-w-4xl">
-      <Link href="/admin" className="mb-3 inline-block text-xs font-medium text-primary hover:underline">
+      <Link href="/admin" className="mb-3 inline-block text-xs font-medium text-link hover:underline">
         ← All organizations
       </Link>
       <h1 className="mb-1 text-xl font-semibold">{org.name}</h1>

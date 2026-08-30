@@ -18,7 +18,7 @@ export function DashboardBlockers({ items, previewLimit = 3 }: { items: BlockedP
         <CardAction>
           <Link
             href="/tasks"
-            className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-primary hover:bg-muted"
+            className="shrink-0 rounded-md border border-black/15 bg-white px-2.5 py-1 text-xs font-semibold text-link hover:bg-muted"
           >
             View all
           </Link>

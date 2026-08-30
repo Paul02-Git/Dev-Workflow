@@ -182,7 +182,7 @@ export default async function ProjectsPage({
         </div>
         <Link
           href="/projects/new"
-          className="shrink-0 rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90"
+          className="shrink-0 rounded-md bg-[#111827] px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           + New Project
         </Link>
@@ -211,7 +211,7 @@ export default async function ProjectsPage({
         <div className="app-card p-8 text-center">
           <p className="text-sm text-muted-foreground">
             No projects yet.{" "}
-            <Link href="/projects/new" className="font-semibold text-primary hover:underline">
+            <Link href="/projects/new" className="font-semibold text-link hover:underline">
               Create your first one
             </Link>
             .

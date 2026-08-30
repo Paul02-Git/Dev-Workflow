@@ -61,7 +61,7 @@ export default async function HandoffPage({ params }: { params: Promise<{ token:
             href={`https://${project.domain.replace(/^https?:\/\//, "")}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mb-6 inline-block text-sm font-medium text-primary hover:underline"
+            className="mb-6 inline-block text-sm font-medium text-link hover:underline"
           >
             {project.domain} ↗
           </a>
@@ -159,7 +159,7 @@ export default async function HandoffPage({ params }: { params: Promise<{ token:
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       {item.username && <span>{item.username}</span>}
                       {item.url && (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-link hover:underline">
                           Open ↗
                         </a>
                       )}

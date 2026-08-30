@@ -112,7 +112,7 @@ export function MaintenancePlanItem({ plan }: { plan: Plan }) {
 
       {!editing && checklistItems.length > 0 && (
         <details className="mt-2 group">
-          <summary className="cursor-pointer text-xs font-medium text-primary marker:content-none [&::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer text-xs font-medium text-link marker:content-none [&::-webkit-details-marker]:hidden">
             What this covers ({checklistItems.length} item{checklistItems.length === 1 ? "" : "s"})
           </summary>
           <ul className="mt-1.5 space-y-1 border-l-2 border-border pl-3">
@@ -157,7 +157,7 @@ export function MaintenancePlanItem({ plan }: { plan: Plan }) {
                 );
                 setEditing(false);
               }}
-              className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground"
+              className="rounded-md bg-[#111827] px-2.5 py-1 text-xs font-semibold text-white"
             >
               Save
             </button>

@@ -78,7 +78,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
             </div>
           </div>
 
-          <SubmitButton pendingLabel="Creating…" className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+          <SubmitButton pendingLabel="Creating…" className="w-full rounded-md bg-[#111827] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
             Create my account
           </SubmitButton>
         </form>

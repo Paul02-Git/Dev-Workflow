@@ -33,7 +33,7 @@ function StatTile({
         </div>
         <div className="text-2xl font-bold text-foreground">{value}</div>
         {subHref ? (
-          <Link href={subHref} className="text-xs text-primary hover:underline">
+          <Link href={subHref} className="text-xs text-link hover:underline">
             {sub}
           </Link>
         ) : (

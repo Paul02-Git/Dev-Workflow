@@ -160,7 +160,7 @@ export function NotificationsBell({ activity }: { activity: NotificationRow[] })
                   return next;
                 });
               }}
-              className="text-xs font-semibold text-primary hover:underline"
+              className="text-xs font-semibold text-link hover:underline"
             >
               Clear
             </button>

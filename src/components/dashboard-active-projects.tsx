@@ -54,7 +54,7 @@ export function DashboardActiveProjects({
         {shown.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No active projects yet.{" "}
-            <Link href="/projects/new" className="text-primary hover:underline">
+            <Link href="/projects/new" className="text-link hover:underline">
               Create one
             </Link>
             .

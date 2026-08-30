@@ -17,7 +17,7 @@ export default async function SignupPage({
       footer={
         <>
           Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-primary hover:underline">
+          <Link href="/login" className="font-semibold text-link hover:underline">
             Sign in
           </Link>
         </>

@@ -37,7 +37,7 @@ export function ClientNotesCard({ projectId, notes }: { projectId: string; notes
     <div className="app-card p-4">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Client Notes</h2>
-        <button type="button" onClick={() => setAdding((v) => !v)} className="text-xs font-semibold text-primary hover:underline">
+        <button type="button" onClick={() => setAdding((v) => !v)} className="text-xs font-semibold text-link hover:underline">
           + Add Note
         </button>
       </div>
@@ -60,7 +60,7 @@ export function ClientNotesCard({ projectId, notes }: { projectId: string; notes
               type="button"
               disabled={pending || !draft.trim()}
               onClick={handleAdd}
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              className="rounded-md bg-[#111827] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
             >
               {pending ? "Saving…" : "Save note"}
             </button>

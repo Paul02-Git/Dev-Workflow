@@ -62,7 +62,7 @@ export function ProjectTimeline({ stages }: { stages: TimelineStage[] }) {
       </div>
 
       <details className="group mt-3">
-        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-link hover:underline [&::-webkit-details-marker]:hidden">
           View all stages
           <ChevronDownIcon className="size-3 transition-transform group-open:rotate-180" />
         </summary>

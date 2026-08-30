@@ -79,7 +79,7 @@ export default async function NewProjectPage({
 
         <SubmitButton
           pendingLabel="Generating workflow…"
-          className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          className="w-full rounded-md bg-[#111827] py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
           Generate workflow →
         </SubmitButton>
