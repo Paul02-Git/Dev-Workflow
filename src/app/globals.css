@@ -48,39 +48,55 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * "Premium Fox" brand palette — Fox Orange primary, Dark Charcoal text,
+ * Soft Cream page background, Warm Gray borders, White surfaces. Warm Gray
+ * (#D6D3D1) and Dark Charcoal (#111827) are literally Tailwind's own
+ * stone-300 and gray-900 — the in-between shades below (secondary/muted/
+ * accent surfaces, muted text) borrow neighboring stone-scale values
+ * instead of inventing new hues, so everything stays one coherent family.
+ *
+ * Deliberately NOT touched here: the app's semantic status colors (task
+ * Done/green, Blocked/red, In Progress/blue, priority Critical/Medium
+ * pills) — those are hardcoded per-component, not wired to these tokens,
+ * specifically so a brand palette change like this one can never silently
+ * recolor what a task's status means. That separation was a hard-learned
+ * fix earlier in this project (see PROJECT_STATUS.md) after the opposite
+ * mistake shipped more than once.
+ */
 :root {
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.3);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.3);
-  --primary: oklch(0.214 0.009 43.1);
-  --primary-foreground: oklch(0.986 0.002 67.8);
-  --secondary: oklch(0.96 0.002 17.2);
-  --secondary-foreground: oklch(0.214 0.009 43.1);
-  --muted: oklch(0.96 0.002 17.2);
-  --muted-foreground: oklch(0.547 0.021 43.1);
-  --accent: oklch(0.96 0.002 17.2);
-  --accent-foreground: oklch(0.214 0.009 43.1);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.005 34.3);
-  --input: oklch(0.922 0.005 34.3);
-  --ring: oklch(0.714 0.014 41.2);
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #e86a33;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #111827;
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c;
+  --accent: #f5f5f4;
+  --accent-foreground: #111827;
+  --destructive: #d03b3b;
+  --border: #d6d3d1;
+  --input: #d6d3d1;
+  --ring: #e86a33;
   --chart-1: oklch(0.879 0.169 91.605);
   --chart-2: oklch(0.769 0.188 70.08);
   --chart-3: oklch(0.666 0.179 58.318);
   --chart-4: oklch(0.555 0.163 48.998);
   --chart-5: oklch(0.473 0.137 46.201);
   --radius: 0.625rem;
-  --sidebar: oklch(0.986 0.002 67.8);
-  --sidebar-foreground: oklch(0.147 0.004 49.3);
-  --sidebar-primary: oklch(0.214 0.009 43.1);
-  --sidebar-primary-foreground: oklch(0.986 0.002 67.8);
-  --sidebar-accent: oklch(0.96 0.002 17.2);
-  --sidebar-accent-foreground: oklch(0.214 0.009 43.1);
-  --sidebar-border: oklch(0.922 0.005 34.3);
-  --sidebar-ring: oklch(0.714 0.014 41.2);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.3);
+  --sidebar: #faf7f2;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #e86a33;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5f5f4;
+  --sidebar-accent-foreground: #111827;
+  --sidebar-border: #d6d3d1;
+  --sidebar-ring: #e86a33;
+  --background: #faf7f2;
+  --foreground: #111827;
 }
 
 .dark {
@@ -146,6 +162,6 @@
    * stays a per-component utility alongside this class.
    */
   .app-card {
-    @apply rounded-xl border border-slate-200/80 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)];
+    @apply rounded-xl border border-border bg-card shadow-[0_2px_12px_rgba(17,24,39,0.04)];
   }
 }

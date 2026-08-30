@@ -47,7 +47,7 @@ function renderEmailShell(bodyHtml: string): string {
             <tr>
               <td style="padding:40px 36px 32px;">
                 <div style="font-family:${EMAIL_FONT}; font-size:17px; font-weight:700; letter-spacing:0.2px; color:#0b0b0b; margin:0 0 28px;">
-                  DEV<span style="color:#2a78d6;">OS</span>
+                  DEV<span style="color:#e86a33;">OS</span>
                 </div>
                 ${bodyHtml}
               </td>

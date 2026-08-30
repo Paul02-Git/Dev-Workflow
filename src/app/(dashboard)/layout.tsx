@@ -95,7 +95,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Image src="/Devos%20logo.png" alt="" width={52} height={52} priority className="shrink-0 rounded-md" />
             <div>
               <div className="text-sm font-semibold leading-tight">
-                DEV<span className="text-[#2a78d6]">OS</span>
+                DEV<span className="text-primary">OS</span>
               </div>
               <div className="text-xs text-muted-foreground">MVP</div>
             </div>
@@ -125,7 +125,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <SidebarAccountMenu name={accountName} email={accountEmail} />
         </SidebarFooter>
       </Sidebar>
-      <main className="h-screen min-w-0 flex-1 overflow-y-auto bg-[#F5F5F5] p-12">{children}</main>
+      <main className="h-screen min-w-0 flex-1 overflow-y-auto bg-background p-12">{children}</main>
       <CommandPalette />
     </SidebarProvider>
   );
