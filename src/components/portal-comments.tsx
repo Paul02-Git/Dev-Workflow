@@ -55,6 +55,9 @@ export function PortalComments({ projects, agencyName = "your agency" }: { proje
     if (!selectedProject) return;
     const id = selectedProject.id;
     const poll = async () => {
+      // Skip while this tab isn't visible — nothing to show a client who
+      // isn't looking at it.
+      if (document.hidden) return;
       try {
         const res = await fetch(`/api/portal/projects/${id}/messages`, { cache: "no-store" });
         if (!res.ok) throw new Error(`poll failed: ${res.status}`);

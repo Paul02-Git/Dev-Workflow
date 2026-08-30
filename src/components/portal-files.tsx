@@ -46,6 +46,9 @@ export function PortalFiles({
 
   useEffect(() => {
     const id = setInterval(async () => {
+      // Skip while this tab isn't visible — nothing to show a client who
+      // isn't looking at it.
+      if (document.hidden) return;
       try {
         const res = await fetch(`/api/portal/projects/${projectId}/files`, { cache: "no-store" });
         if (!res.ok) throw new Error(`poll failed: ${res.status}`);

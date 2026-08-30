@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createHmac, timingSafeEqual, randomBytes, scryptSync } from "crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -158,16 +159,53 @@ export async function recordLoginAttempt(organizationId: string | null, success:
  * row is somehow gone by the time this runs (shouldn't happen for anything
  * gated by requireAuth first).
  */
-export async function getOrganizationActorName(organizationId: string): Promise<string> {
-  const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, organizationId));
+// Single shared row lookup backing requireAuth()/getOrganizationActorName()/
+// getOrganizationContactEmail() below — cache()-wrapped so calling all three
+// in one request (the dashboard layout does exactly this) costs one query
+// total instead of three, each independently deduped against its own
+// repeats but not against each other. Selects every column any of the three
+// callers need, so there's exactly one source of truth for this row per
+// request rather than N differently-shaped queries against it.
+const getOrganizationCore = cache(async (organizationId: string) => {
+  const [org] = await db
+    .select({
+      id: organizations.id,
+      deletedAt: organizations.deletedAt,
+      name: organizations.name,
+      email: organizations.email,
+      isPlatformAdmin: organizations.isPlatformAdmin,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId));
+  return org ?? null;
+});
+
+export const getOrganizationActorName = cache(async (organizationId: string): Promise<string> => {
+  const org = await getOrganizationCore(organizationId);
   return org?.name ?? "Agency";
-}
+});
 
 /** Resolves which email to tell a client to invite (access-item preset instructions — see resolvePresetInstructions in data/access-item-presets.ts). Falls back to AGENCY_EMAIL only for the unexpected case of an org with no email on file — signup requires one, so this should be rare in practice. */
-export async function getOrganizationContactEmail(organizationId: string): Promise<string> {
-  const [org] = await db.select({ email: organizations.email }).from(organizations).where(eq(organizations.id, organizationId));
+export const getOrganizationContactEmail = cache(async (organizationId: string): Promise<string> => {
+  const org = await getOrganizationCore(organizationId);
   return org?.email ?? AGENCY_EMAIL;
-}
+});
+
+/**
+ * Cheap check for whether to show the Admin nav link at all — the actual
+ * security boundary is requirePlatformAdmin() in queries/organizations.ts,
+ * called again by every /admin page/action; this is just for the sidebar's
+ * own conditional rendering, so it's safe to read off the same cached row
+ * requireAuth()/getOrganizationActorName() already fetched for this
+ * request, instead of the separate query this used to run (previously
+ * `isPlatformAdminOrg` in queries/organizations.ts) — the dashboard layout
+ * runs on every single page in the app, so that was one extra DB round trip
+ * on every navigation.
+ */
+export const getOrganizationIsPlatformAdmin = cache(async (organizationId: string): Promise<boolean> => {
+  const org = await getOrganizationCore(organizationId);
+  return !!org?.isPlatformAdmin;
+});
 
 /**
  * Defense-in-depth for sensitive server actions (the password vault reveal
@@ -196,25 +234,25 @@ export async function getOrganizationContactEmail(organizationId: string): Promi
  * gets, since that's a materially different, more helpful outcome for
  * someone who still has a live session for a now-deactivated org.
  */
-export async function requireAuth(): Promise<{ organizationId: string }> {
+// Wrapped in React's cache() — every page under (dashboard) calls this
+// again on top of the shared layout already calling it once per request,
+// which was previously two round-trips to the same organizations row for
+// every single navigation. cache() only dedupes within one request's
+// render, never persists across requests, so a fresh request always runs
+// the real DB check (and redirect/throw) at least once — this can never
+// serve a stale or bypassed auth result.
+export const requireAuth = cache(async (): Promise<{ organizationId: string }> => {
   const store = await cookies();
   const value = store.get(SESSION_COOKIE_NAME)?.value;
   const session = parseSessionCookieValue(value);
   if (!session) throw new Error("Not authenticated");
 
-  const [org] = await withTimeout(
-    db
-      .select({ id: organizations.id, deletedAt: organizations.deletedAt })
-      .from(organizations)
-      .where(eq(organizations.id, session.organizationId)),
-    5000,
-    "requireAuth"
-  );
+  const org = await withTimeout(getOrganizationCore(session.organizationId), 5000, "requireAuth");
   if (!org) throw new Error("Not authenticated");
   if (org.deletedAt) redirect("/account-deactivated");
 
   return session;
-}
+});
 
 // ---------------------------------------------------------------------------
 // Client Workspace auth — a real login (loginSlug + password) replacing the

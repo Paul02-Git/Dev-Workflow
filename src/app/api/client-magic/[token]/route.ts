@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyClientMagicLink } from "@/lib/queries/clients";
+import { verifyClientMagicLink, logClientLogin } from "@/lib/queries/clients";
 import { CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue } from "@/lib/auth";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -9,6 +9,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!client) {
     return NextResponse.redirect(new URL("/client-login?error=magic_expired", request.url));
   }
+
+  await logClientLogin(client.id);
 
   const response = NextResponse.redirect(new URL("/portal", request.url));
   response.cookies.set(CLIENT_SESSION_COOKIE_NAME, makeClientSessionCookieValue(client.id), {

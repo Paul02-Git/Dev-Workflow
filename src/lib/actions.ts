@@ -14,6 +14,7 @@ import {
   getClientByContactEmail,
   verifyClientMagicCode,
   getClientRecordForSelf,
+  logClientLogin,
 } from "@/lib/queries/clients";
 import { cookies } from "next/headers";
 import {
@@ -70,13 +71,14 @@ import {
   deleteAllProjectMessages,
   getAttachmentProjectId,
   markClientActionTaskDone,
+  createProjectNote,
 } from "@/lib/queries/projects";
 import {
   uploadTaskAttachment,
   uploadProjectAttachment,
   uploadMessageAttachment,
   replaceAttachment,
-  getSignedAttachmentUrl,
+  getSignedAttachmentUrls,
 } from "@/lib/storage";
 import { requirePlatformAdmin, deleteOrganization, restoreOrganization, permanentlyDeleteOrganization } from "@/lib/queries/organizations";
 import { resolveIntakeToken, generateIntakeToken, revokeIntakeToken } from "@/lib/queries/agency-settings";
@@ -255,11 +257,11 @@ export async function resolveAttachmentUrlsAction(
   items: { id: string; storagePath: string | null }[]
 ): Promise<Record<string, string | null>> {
   const results: Record<string, string | null> = {};
-  await Promise.all(
-    items.map(async (item) => {
-      if (item.storagePath) results[item.id] = await getSignedAttachmentUrl(item.storagePath);
-    })
-  );
+  const storagePaths = items.map((item) => item.storagePath).filter((p): p is string => !!p);
+  const signedUrls = await getSignedAttachmentUrls(storagePaths);
+  for (const item of items) {
+    if (item.storagePath) results[item.id] = signedUrls.get(item.storagePath) ?? null;
+  }
   return results;
 }
 
@@ -614,7 +616,15 @@ export async function submitIntakeAction(formData: FormData) {
   revalidatePath("/clients");
 
   const projectName = String(formData.get("projectName") ?? "").trim() || `${client.name} — ${projectType}`;
-  await createProjectWithWorkflow({ organizationId, clientId: client.id, name: projectName, projectType, technologyKeys });
+  await createProjectWithWorkflow({
+    organizationId,
+    clientId: client.id,
+    name: projectName,
+    projectType,
+    technologyKeys,
+    actorName: CLIENT_ACTOR_NAME,
+    activityAction: "project_created_via_intake",
+  });
 
   // Submitting this form live, in this browser, is itself proof of
   // presence — same reasoning signupAction uses to log an agency straight
@@ -749,6 +759,7 @@ export async function verifyClientMagicCodeAction(formData: FormData) {
   await recordClientLoginAttempt(client?.id ?? null, !!result);
   if (!result) back();
 
+  await logClientLogin(result!.id);
   await setClientSession(result!.id);
   redirect("/portal");
 }
@@ -907,6 +918,15 @@ export async function postProjectMessageAction(formData: FormData) {
   // which was the real, confirmed cause of repeated production timeouts
   // ("wave 1 timed out") triggered by ordinary chat use, not page load.
   await postProjectMessage(projectId, organizationId, await getOrganizationActorName(organizationId), body);
+}
+
+/** Internal Client Activity note — never client-visible, unlike postProjectMessageAction above. Same "the client component already appends optimistically, don't force a full page re-render" reasoning: no revalidatePath. */
+export async function createProjectNoteAction(formData: FormData) {
+  const { organizationId } = await requireAuth();
+  const projectId = String(formData.get("projectId") ?? "");
+  const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
+  if (!projectId || !body) throw new Error("Note can't be empty");
+  return createProjectNote(projectId, organizationId, await getOrganizationActorName(organizationId), body);
 }
 
 /** Internal — uploads a file as its own chat message rather than attaching it to whatever's currently typed. */

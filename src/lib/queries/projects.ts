@@ -15,10 +15,11 @@ import {
   attachments,
   accessItems,
   projectMessages,
+  projectNotes,
 } from "@/db/schema";
 import { eq, desc, inArray, and, or, isNull, isNotNull, sql, ne } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { deleteStorageObjects, getSignedAttachmentUrl } from "@/lib/storage";
+import { deleteStorageObjects, getSignedAttachmentUrls } from "@/lib/storage";
 import { generateWorkflow } from "@/lib/workflow-engine/generate-workflow";
 import { computeEffectiveStatuses } from "@/lib/workflow-engine/blocked-status";
 import { computeHealthScore } from "@/lib/health/health-score";
@@ -196,6 +197,12 @@ export async function createProjectWithWorkflow(input: {
   name: string;
   projectType: string;
   technologyKeys: string[];
+  // Defaults to the agency owner via getOrganizationActorName — override
+  // for the one real exception, a client submitting the public intake
+  // form, same reasoning as handoff_viewed/markClientActionTaskDone
+  // stamping "Client" directly instead of always attributing to Paul.
+  actorName?: string;
+  activityAction?: string;
 }) {
   const { organizationId } = input;
   const plan = generateWorkflow(input.technologyKeys);
@@ -319,15 +326,22 @@ export async function createProjectWithWorkflow(input: {
   await db.insert(activityLogs).values({
     organizationId,
     projectId: project.id,
-    action: "project_created",
+    action: input.activityAction ?? "project_created",
     detail: `Generated ${plan.tasks.length} tasks across ${plan.stages.length} stages from: ${input.technologyKeys.join(", ")}`,
-    actorName: await getOrganizationActorName(organizationId),
+    actorName: input.actorName ?? (await getOrganizationActorName(organizationId)),
   });
 
   return project;
 }
 
-export async function getProjectDetail(projectId: string, organizationId: string) {
+// Wrapped in React's cache() — getProjectIssues() below calls this function
+// again internally, and the project detail page already calls it directly
+// in the same request (see (dashboard)/projects/[id]/page.tsx), which meant
+// every project page load ran this whole 2-wave, ~8-query fan-out twice.
+// cache() only dedupes calls within a single request's render, never
+// persists across requests, so a fresh request always runs the real queries
+// at least once — same reasoning already applied to listProjectsForSwitcher.
+export const getProjectDetail = cache(async function getProjectDetail(projectId: string, organizationId: string) {
   // Two parallel "waves" instead of ~7 queries run one at a time — every
   // query here that only needs projectId (not something from an earlier
   // query's result) fires together. This used to be fully sequential,
@@ -335,54 +349,26 @@ export async function getProjectDetail(projectId: string, organizationId: string
   // once the DB moved to the transaction pooler (real, measured: ~2s for
   // this function alone on a mid-size project, dominated by round-trip
   // count, not query cost).
-  // TEMPORARY diagnostic instrumentation (2026-08-23) — tracking down a
-  // production-only "wave 1 timed out after 8000ms" that survived both a
-  // duplicate-polling fix and a Vercel function region change (iad1 ->
-  // hnd1), and never reproduces against the same DB from outside Vercel.
-  // Logs per-query elapsed time (fired via .then, independent of the
-  // withTimeout race) so a real failure tells us WHICH piece is slow
-  // instead of just "something was". Remove once the cause is found.
-  const wave1Start = performance.now();
-  const timed = <T,>(label: string, p: Promise<T>): Promise<T> =>
-    p.then(
-      (r) => {
-        console.log(`[wave1 diag] ${label} resolved at ${(performance.now() - wave1Start).toFixed(0)}ms`);
-        return r;
-      },
-      (e) => {
-        console.log(`[wave1 diag] ${label} REJECTED at ${(performance.now() - wave1Start).toFixed(0)}ms: ${e}`);
-        throw e;
-      }
-    );
   const [projectRows, projectStageRows, taskRows, techRows] = await withTimeout(
     Promise.all([
-      timed(
-        "project",
-        // The organizationId filter here is the actual security boundary
-        // for this whole function: if projectId belongs to a different
-        // organization, this returns empty and everything below treats it
-        // exactly like "not found" — never leaking another tenant's data
-        // just because its id was guessed or leaked.
-        db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
-      ),
-      timed(
-        "stages",
-        db
-          .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
-          .from(projectStages)
-          .innerJoin(stages, eq(projectStages.stageId, stages.id))
-          .where(eq(projectStages.projectId, projectId))
-          .orderBy(projectStages.sortOrder)
-      ),
-      timed("tasks", db.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(tasks.sortOrder)),
-      timed(
-        "technologies",
-        db
-          .select({ name: technologies.name })
-          .from(projectTechnologies)
-          .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
-          .where(eq(projectTechnologies.projectId, projectId))
-      ),
+      // The organizationId filter here is the actual security boundary
+      // for this whole function: if projectId belongs to a different
+      // organization, this returns empty and everything below treats it
+      // exactly like "not found" — never leaking another tenant's data
+      // just because its id was guessed or leaked.
+      db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId))),
+      db
+        .select({ id: stages.id, key: stages.key, name: stages.name, sortOrder: projectStages.sortOrder })
+        .from(projectStages)
+        .innerJoin(stages, eq(projectStages.stageId, stages.id))
+        .where(eq(projectStages.projectId, projectId))
+        .orderBy(projectStages.sortOrder),
+      db.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(tasks.sortOrder),
+      db
+        .select({ name: technologies.name })
+        .from(projectTechnologies)
+        .innerJoin(technologies, eq(projectTechnologies.technologyId, technologies.id))
+        .where(eq(projectTechnologies.projectId, projectId)),
     ]),
     8000,
     "getProjectDetail wave 1"
@@ -453,7 +439,7 @@ export async function getProjectDetail(projectId: string, organizationId: string
     dependencies: depRows,
     healthScore,
   };
-}
+});
 
 /**
  * The "Check Project" feature: runs the hand-written forgotten-task rules
@@ -493,6 +479,44 @@ export type ProjectPulseSummary = {
 };
 
 
+/**
+ * Recomputes and persists a project's health score from only the two
+ * queries it actually needs — task fields + dependency edges — instead of
+ * the full getProjectDetail() fan-out (project/stages/technologies/client/
+ * tags/attachments across two "waves" of ~7 queries), which
+ * updateTaskStatus/bulkUpdateTaskStatus previously called just to read one
+ * derived number off its return value. getProjectDetail's own comment
+ * measures it at ~2s on a mid-size project — every single task status
+ * change, including one checkbox click, was paying that full cost. This
+ * pays only for what health scoring reads.
+ */
+async function recomputeHealthScore(projectId: string, organizationId: string): Promise<void> {
+  const taskRows = await db
+    .select({ id: tasks.id, status: tasks.status, isCritical: tasks.isCritical, dueDate: tasks.dueDate })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.organizationId, organizationId)));
+
+  if (taskRows.length === 0) return;
+
+  const taskIds = taskRows.map((t) => t.id);
+  const depRows = await db
+    .select({ taskId: taskDependencies.taskId, dependsOnTaskId: taskDependencies.dependsOnTaskId })
+    .from(taskDependencies)
+    .where(inArray(taskDependencies.taskId, taskIds));
+
+  const effective = computeEffectiveStatuses(
+    taskRows.map((t) => ({ id: t.id, status: t.status })),
+    depRows
+  );
+
+  const healthScore = computeHealthScore(
+    taskRows.map((t) => ({ status: t.status, isCritical: t.isCritical, dueDate: t.dueDate })),
+    taskRows.map((t) => effective.get(t.id) ?? t.status)
+  );
+
+  await db.update(projects).set({ healthScore, updatedAt: new Date() }).where(eq(projects.id, projectId));
+}
+
 export async function updateTaskStatus(taskId: string, organizationId: string, status: string) {
   const completedAt = status === "DONE" ? new Date() : null;
   // A task marked Done can't still be "waiting on the client" — clear the
@@ -521,14 +545,7 @@ export async function updateTaskStatus(taskId: string, organizationId: string, s
       actorName: await getOrganizationActorName(organizationId),
     });
 
-    // Recompute and persist the project's health score.
-    const detail = await getProjectDetail(task.projectId, organizationId);
-    if (detail) {
-      await db
-        .update(projects)
-        .set({ healthScore: detail.healthScore, updatedAt: new Date() })
-        .where(eq(projects.id, task.projectId));
-    }
+    await recomputeHealthScore(task.projectId, organizationId);
   }
 
   return task;
@@ -572,13 +589,7 @@ export async function bulkUpdateTaskStatus(taskIds: string[], organizationId: st
 
   const projectIds = [...new Set(updated.map((t) => t.projectId))];
   for (const projectId of projectIds) {
-    const detail = await getProjectDetail(projectId, organizationId);
-    if (detail) {
-      await db
-        .update(projects)
-        .set({ healthScore: detail.healthScore, updatedAt: new Date() })
-        .where(eq(projects.id, projectId));
-    }
+    await recomputeHealthScore(projectId, organizationId);
   }
 
   return projectIds;
@@ -1251,22 +1262,23 @@ export async function listProjectMessages(projectId: string, organizationId: str
     .where(and(eq(projectMessages.projectId, projectId), eq(projectMessages.organizationId, organizationId)))
     .orderBy(projectMessages.createdAt);
 
-  return Promise.all(
-    rows.map(async (r) => ({
-      id: r.id,
-      authorName: r.authorName,
-      body: r.body,
-      createdAt: r.createdAt,
-      attachment: r.attachmentId
-        ? {
-            id: r.attachmentId,
-            label: r.attachmentLabel,
-            fileSize: r.attachmentFileSize,
-            url: r.attachmentStoragePath ? await getSignedAttachmentUrl(r.attachmentStoragePath) : r.attachmentUrl,
-          }
-        : null,
-    }))
-  );
+  const storagePaths = rows.map((r) => r.attachmentStoragePath).filter((p): p is string => !!p);
+  const signedUrls = await getSignedAttachmentUrls(storagePaths);
+
+  return rows.map((r) => ({
+    id: r.id,
+    authorName: r.authorName,
+    body: r.body,
+    createdAt: r.createdAt,
+    attachment: r.attachmentId
+      ? {
+          id: r.attachmentId,
+          label: r.attachmentLabel,
+          fileSize: r.attachmentFileSize,
+          url: r.attachmentStoragePath ? (signedUrls.get(r.attachmentStoragePath) ?? null) : r.attachmentUrl,
+        }
+      : null,
+  }));
 }
 
 /** Posts to a project's Comments thread and logs it to Recent Activity — shared by the internal Messages tab (authorName: "Paul") and the public Client Portal (authorName: "Client"). Returns the inserted row so a caller attaching a file can link it to this message's id. */
@@ -1313,6 +1325,20 @@ export async function deleteAllProjectMessages(projectId: string, organizationId
       : [];
   await db.delete(projectMessages).where(and(eq(projectMessages.projectId, projectId), eq(projectMessages.organizationId, organizationId)));
   if (paths.length > 0) await deleteStorageObjects(paths);
+}
+
+/** Internal-only running log for the Client Activity tab — communication preferences, meeting notes, etc. Never surfaced to any client-facing query (handoff/portal), unlike projectMessages. Newest-first, same ordering as the Comments thread's underlying data before it's reversed for display. */
+export async function listProjectNotes(projectId: string, organizationId: string) {
+  return db
+    .select()
+    .from(projectNotes)
+    .where(and(eq(projectNotes.projectId, projectId), eq(projectNotes.organizationId, organizationId)))
+    .orderBy(desc(projectNotes.createdAt));
+}
+
+export async function createProjectNote(projectId: string, organizationId: string, authorName: string, body: string) {
+  const [note] = await db.insert(projectNotes).values({ organizationId, projectId, authorName, body }).returning();
+  return note;
 }
 
 export async function getProjectByHandoffToken(token: string) {
@@ -1372,12 +1398,12 @@ export async function getClientVisibleFiles(projectId: string) {
     )
     .orderBy(desc(attachments.createdAt));
 
-  return Promise.all(
-    rows.map(async (f) => ({
-      ...f,
-      url: f.storagePath ? await getSignedAttachmentUrl(f.storagePath) : f.url,
-    }))
-  );
+  const storagePaths = rows.map((f) => f.storagePath).filter((p): p is string => !!p);
+  const signedUrls = await getSignedAttachmentUrls(storagePaths);
+  return rows.map((f) => ({
+    ...f,
+    url: f.storagePath ? (signedUrls.get(f.storagePath) ?? null) : f.url,
+  }));
 }
 
 /**
@@ -1561,10 +1587,7 @@ export async function markClientActionTaskDone(taskId: string, projectId: string
     actorName: CLIENT_ACTOR_NAME,
   });
 
-  const detail = await getProjectDetail(projectId, organizationId);
-  if (detail) {
-    await db.update(projects).set({ healthScore: detail.healthScore, updatedAt: new Date() }).where(eq(projects.id, projectId));
-  }
+  await recomputeHealthScore(projectId, organizationId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1601,9 +1624,11 @@ export async function listRecentActivityAcrossProjects(organizationId: string, l
       taskTitle: tasks.title,
       projectId: activityLogs.projectId,
       projectName: projects.name,
+      clientName: clients.name,
     })
     .from(activityLogs)
     .innerJoin(projects, eq(activityLogs.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
     .leftJoin(tasks, eq(activityLogs.taskId, tasks.id))
     .where(eq(activityLogs.organizationId, organizationId))
     .orderBy(desc(activityLogs.createdAt))
@@ -1685,12 +1710,12 @@ export async function listProjectAttachments(projectId: string, organizationId: 
 /** Same as listProjectAttachments, with signed URLs already resolved for storagePath rows — shared by the Files tab's initial server render and its polling route, so both stay in sync with a single implementation. */
 export async function listProjectAttachmentsWithUrls(projectId: string, organizationId: string) {
   const files = await listProjectAttachments(projectId, organizationId);
-  return Promise.all(
-    files.map(async (f) => ({
-      ...f,
-      url: f.storagePath ? await getSignedAttachmentUrl(f.storagePath) : f.url,
-    }))
-  );
+  const storagePaths = files.map((f) => f.storagePath).filter((p): p is string => !!p);
+  const signedUrls = await getSignedAttachmentUrls(storagePaths);
+  return files.map((f) => ({
+    ...f,
+    url: f.storagePath ? (signedUrls.get(f.storagePath) ?? null) : f.url,
+  }));
 }
 
 export async function updateProjectNotes(projectId: string, organizationId: string, notes: string | null) {

@@ -165,16 +165,26 @@ export async function replaceAttachment(attachmentId: string, organizationId: st
 }
 
 /**
- * Signed URL, generated fresh on every render (1 hour expiry) — the bucket
- * is private, so there's no permanent public URL to store or leak.
+ * Signed URLs (1 hour expiry — the bucket is private, so there's no
+ * permanent public URL to store or leak), generated fresh on every render,
+ * for many objects in one Storage API call instead of one call per file.
+ * Every list-view URL-resolution call site (Messages, Files tab, Client
+ * Portal) used to fire N concurrent createSignedUrl() requests — each its
+ * own network round trip, plus its own fresh Supabase client — for a
+ * project with N attachments. This collapses that to a single request via
+ * the SDK's own batch endpoint, regardless of how many files there are.
+ * No-ops on an empty list.
  */
-export async function getSignedAttachmentUrl(storagePath: string): Promise<string | null> {
+export async function getSignedAttachmentUrls(storagePaths: string[]): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  if (storagePaths.length === 0) return result;
   const supabase = getAdminClient();
-  const { data, error } = await supabase.storage
-    .from(ATTACHMENTS_BUCKET)
-    .createSignedUrl(storagePath, 60 * 60);
-  if (error) return null;
-  return data.signedUrl;
+  const { data, error } = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrls(storagePaths, 60 * 60);
+  if (error || !data) return result;
+  for (const row of data) {
+    if (row.path) result.set(row.path, row.signedUrl ?? null);
+  }
+  return result;
 }
 
 /** Ensures the private attachments bucket exists. Safe to call repeatedly. */

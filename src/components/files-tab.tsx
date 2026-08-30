@@ -63,6 +63,7 @@ const POLL_INTERVAL_MS = 8000;
 
 export function FilesTab({ projectId, files }: { projectId: string; files: ProjectFile[] }) {
   const [liveFiles, setLiveFiles] = useState(files);
+  const [search, setSearch] = useState("");
   const [, startTransition] = useTransition();
   const [dragOver, setDragOver] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ done: number; total: number } | null>(null);
@@ -94,6 +95,11 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
   // reasoning) as the Messages tab's polling.
   useEffect(() => {
     const id = setInterval(async () => {
+      // Skip while the browser tab isn't visible — this component stays
+      // mounted even when the Files tab isn't the active one (ProjectTabs
+      // hides inactive panels with CSS, it doesn't unmount them), so
+      // without this guard it polls in the background indefinitely.
+      if (document.hidden) return;
       try {
         const res = await fetch(`/api/projects/${projectId}/files`, { cache: "no-store" });
         if (!res.ok) throw new Error(`poll failed: ${res.status}`);
@@ -137,8 +143,12 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
     });
   };
 
+  const visibleFiles = search.trim()
+    ? liveFiles.filter((f) => (f.label ?? "").toLowerCase().includes(search.trim().toLowerCase()))
+    : liveFiles;
+
   const toggleSelectAll = () => {
-    setSelected((prev) => (prev.size === liveFiles.length ? new Set() : new Set(liveFiles.map((f) => f.id))));
+    setSelected((prev) => (prev.size === visibleFiles.length ? new Set() : new Set(visibleFiles.map((f) => f.id))));
   };
 
   const handleBulkDelete = () => {
@@ -157,11 +167,21 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
   return (
     <div>
       <div className="app-card mb-4 p-4">
-        <h2 className="mb-1 text-sm font-semibold">Files</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Everything uploaded or linked across this project — task proof and general files (logos, briefs,
-          contracts) alike.
-        </p>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Shared Files</h2>
+            <p className="text-xs text-muted-foreground">{liveFiles.length} file{liveFiles.length === 1 ? "" : "s"} shared with the client</p>
+          </div>
+          {liveFiles.length > 0 && (
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search files…"
+              className="w-full max-w-56 rounded-md border border-black/15 px-3 py-1.5 text-xs"
+            />
+          )}
+        </div>
 
         <div
           onDragOver={(e) => {
@@ -221,13 +241,15 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
 
         {liveFiles.length === 0 ? (
           <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">No files yet.</div>
+        ) : visibleFiles.length === 0 ? (
+          <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">No files match “{search}”.</div>
         ) : (
           <>
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2">
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
-                  checked={selected.size === liveFiles.length}
+                  checked={selected.size === visibleFiles.length}
                   onChange={toggleSelectAll}
                   className="cursor-pointer"
                 />
@@ -249,8 +271,8 @@ export function FilesTab({ projectId, files }: { projectId: string; files: Proje
             </div>
 
             <div className="divide-y divide-border">
-              {liveFiles.map((f) => (
-                <div key={f.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+              {visibleFiles.map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 rounded-md px-1 py-2.5 text-sm hover:bg-muted/40">
                   <div className="flex min-w-0 items-center gap-3">
                     <input
                       type="checkbox"

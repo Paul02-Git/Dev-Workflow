@@ -1,7 +1,8 @@
 import { randomBytes, randomInt } from "crypto";
 import { db } from "@/db/client";
-import { clients, projects, tasks } from "@/db/schema";
+import { clients, projects, tasks, activityLogs } from "@/db/schema";
 import { and, desc, eq, gt, ilike, inArray, isNull } from "drizzle-orm";
+import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
 
 const MAGIC_LINK_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -121,6 +122,32 @@ export async function verifyClientMagicLink(token: string): Promise<{ id: string
  * plain read, not a consume-and-clear. Wrong/expired code, ambiguous
  * email, or no email on file all return null without distinguishing why.
  */
+/**
+ * Fans out one `client_logged_in` activity_logs row per project this
+ * client has — activityLogs.projectId is NOT NULL (every row belongs to
+ * exactly one project), but a client login is account-wide (grants access
+ * to every one of their projects at once via /portal), not tied to a
+ * single project. Same "genuine visit, log every real occurrence"
+ * reasoning as handoff_viewed. A client with zero projects yet is a no-op.
+ */
+export async function logClientLogin(clientId: string): Promise<void> {
+  const clientProjects = await db
+    .select({ id: projects.id, organizationId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.clientId, clientId));
+  if (clientProjects.length === 0) return;
+
+  await db.insert(activityLogs).values(
+    clientProjects.map((p) => ({
+      organizationId: p.organizationId,
+      projectId: p.id,
+      action: "client_logged_in",
+      detail: null,
+      actorName: CLIENT_ACTOR_NAME,
+    }))
+  );
+}
+
 export async function verifyClientMagicCode(email: string, code: string): Promise<{ id: string; name: string } | null> {
   const matches = await db
     .select({ id: clients.id, name: clients.name, inviteCode: clients.inviteCode, inviteTokenExpiresAt: clients.inviteTokenExpiresAt })

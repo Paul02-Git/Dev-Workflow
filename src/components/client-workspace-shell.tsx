@@ -41,7 +41,7 @@ export function ClientWorkspaceShell({
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <aside className="flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-4">
         <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
-          <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
+          <Image src="/Devos%20logo.png" alt="" width={52} height={52} priority className="shrink-0 rounded-md" />
           <div>
             <div className="text-sm font-semibold leading-tight">
               DEV<span className="text-primary">OS</span>

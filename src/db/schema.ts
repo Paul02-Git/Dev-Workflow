@@ -494,6 +494,27 @@ export const projectMessages = pgTable(
   (t) => [index("project_message_project_idx").on(t.projectId)]
 );
 
+// Internal notes about a client/project — never surfaced to the client
+// portal or handoff page, unlike projectMessages above. Deliberately a
+// discrete timestamped log (like projectMessages), not the single
+// free-text projects.notes column the Notes tab already owns — that field
+// stays as-is for longer-form notes; this is the Client Activity tab's
+// own running log ("communication preferences", "meeting notes", etc.).
+export const projectNotes = pgTable(
+  "project_notes",
+  {
+    id: cuid(),
+    organizationId: text("organization_id").references(() => organizations.id),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    authorName: text("author_name").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("project_note_project_idx").on(t.projectId)]
+);
+
 // ---------------------------------------------------------------------------
 // Templates (authored content the workflow engine draws from)
 // ---------------------------------------------------------------------------

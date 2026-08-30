@@ -41,7 +41,7 @@ export function AuthCard({
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="app-card w-full max-w-sm rounded-xl border border-border bg-card p-6">
         <div className="mb-4 flex flex-col items-center">
-          <Image src="/logo.png" alt="" width={64} height={64} loading="eager" className="shrink-0 rounded-md" />
+          <Image src="/Devos%20logo.png" alt="" width={88} height={88} loading="eager" className="shrink-0 rounded-md" />
           <div className="mt-2 text-lg font-semibold leading-tight">
             DEV<span className="text-[#2a78d6]">OS</span>
           </div>

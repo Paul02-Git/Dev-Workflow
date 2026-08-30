@@ -8,8 +8,10 @@ import {
   listProjectAttachmentsWithUrls,
   getLastHandoffView,
   listProjectMessages,
+  listProjectNotes,
   type ProjectPulseSummary,
 } from "@/lib/queries/projects";
+import { CLIENT_ACTOR_NAME } from "@/data/agency-info";
 import { listAccessItems } from "@/lib/queries/access-items";
 import { listMaintenancePlansForProject } from "@/lib/queries/maintenance";
 import { withTimeout } from "@/lib/with-timeout";
@@ -31,7 +33,10 @@ import { FilesTab } from "@/components/files-tab";
 import { NotesTab } from "@/components/notes-tab";
 import { ActivityTab } from "@/components/activity-tab";
 import { SettingsTab } from "@/components/settings-tab";
-import { MessagesTab } from "@/components/messages-tab";
+import { ClientProfileCard } from "@/components/client-profile-card";
+import { ClientTimeline } from "@/components/client-timeline";
+import { ClientNotesCard } from "@/components/client-notes-card";
+import { FloatingChatWidget } from "@/components/floating-chat-widget";
 import { STAGES } from "@/data/stages";
 
 const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -66,6 +71,7 @@ export default async function ProjectDetailPage({
     maintenancePlans,
     lastHandoffView,
     messages,
+    projectNotes,
   ] = await withTimeout(
     Promise.all([
       getProjectDetail(id, organizationId),
@@ -77,6 +83,7 @@ export default async function ProjectDetailPage({
       listMaintenancePlansForProject(id, organizationId),
       getLastHandoffView(id, organizationId),
       listProjectMessages(id, organizationId),
+      listProjectNotes(id, organizationId),
     ]),
     8000,
     "project detail page queries"
@@ -123,6 +130,13 @@ export default async function ProjectDetailPage({
   const topLevelTasks = tasks.filter((t) => !t.parentTaskId);
   const tasksDone = topLevelTasks.filter((t) => t.effectiveStatus === "DONE").length;
   const tasksTotal = topLevelTasks.length;
+
+  // Client Timeline: a plain filter of fullActivity (already fetched above,
+  // ordered newest-first) down to what the client themselves actually did —
+  // no new query needed. lastLoginAt is just the first client_logged_in
+  // match in that same already-ordered list.
+  const clientActivity = fullActivity.filter((a) => a.actorName === CLIENT_ACTOR_NAME);
+  const lastLoginAt = clientActivity.find((a) => a.action === "client_logged_in")?.createdAt ?? null;
 
   // --- Timeline: derived from existing stages/tasks, no new data model ---
   const timelineStages = stages
@@ -423,12 +437,36 @@ export default async function ProjectDetailPage({
   );
 
   const filesContent = <FilesTab projectId={project.id} files={projectFiles} />;
-  const messagesContent = <MessagesTab projectId={project.id} messages={messages} />;
-  const clientActivityContent = (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] lg:items-start">
-      <div>{filesContent}</div>
-      <div>{messagesContent}</div>
+  const clientActivityContent = client ? (
+    <div className="space-y-4">
+      <ClientProfileCard
+        projectId={project.id}
+        clientId={client.id}
+        clientName={client.name}
+        company={client.company}
+        contactEmail={client.contactEmail}
+        contactPhone={client.contactPhone}
+        clientSince={client.createdAt}
+        domain={project.domain}
+        handoffToken={project.handoffToken}
+        lastLoginAt={lastLoginAt}
+        tasksDone={tasksDone}
+        tasksTotal={tasksTotal}
+        filesSharedCount={projectFiles.length}
+      />
+      {/* Same 3-column bento layout as Command Center above — one card per
+          column, not a single stacked column. items-start (not stretch):
+          the Timeline can run long on a chatty project, and stretching the
+          other two columns to match it is the exact "doesn't fit" bug this
+          app already hit and fixed once before on Accounts & Access. */}
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
+        <ClientTimeline activity={clientActivity} />
+        {filesContent}
+        <ClientNotesCard projectId={project.id} notes={projectNotes} />
+      </div>
     </div>
+  ) : (
+    <p className="text-sm text-muted-foreground">No client assigned to this project yet.</p>
   );
   const notesContent = <NotesTab projectId={project.id} notes={project.notes} />;
   const activityTabContent = <ActivityTab activity={fullActivity} />;
@@ -481,6 +519,8 @@ export default async function ProjectDetailPage({
           ]}
         />
       </Suspense>
+
+      {client && <FloatingChatWidget projectId={project.id} clientName={client.name} messages={messages} />}
     </div>
   );
 }

@@ -230,12 +230,6 @@ export async function permanentlyDeleteOrganization(id: string): Promise<void> {
   await db.delete(organizations).where(eq(organizations.id, id));
 }
 
-/** Cheap check for whether to show the Admin nav link at all — the actual security boundary is requirePlatformAdmin(), called again by every /admin page/action; this is just for the sidebar's own conditional rendering. */
-export async function isPlatformAdminOrg(organizationId: string): Promise<boolean> {
-  const [org] = await db.select({ isPlatformAdmin: organizations.isPlatformAdmin }).from(organizations).where(eq(organizations.id, organizationId));
-  return !!org?.isPlatformAdmin;
-}
-
 /**
  * One organization's own record, for the /admin drill-down page's header.
  * Returns null for a platform-admin organization (Dovera) even if its id

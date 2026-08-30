@@ -1,14 +1,25 @@
 import Image from "next/image";
-import { logoutAction } from "@/lib/auth-actions";
 import { CommandPalette } from "@/components/command-palette";
-import { SearchTrigger } from "@/components/search-trigger";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SidebarNav } from "@/components/sidebar-nav";
-import { LogoutButton } from "@/components/logout-button";
+import { SidebarAccountMenu } from "@/components/sidebar-account-menu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
 import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
-import { requireAuth } from "@/lib/auth";
-import { isPlatformAdminOrg } from "@/lib/queries/organizations";
+import {
+  requireAuth,
+  getOrganizationActorName,
+  getOrganizationContactEmail,
+  getOrganizationIsPlatformAdmin,
+} from "@/lib/auth";
 
 // Every page in this group needs live, authenticated, per-request data —
 // there's no meaningful static version of a client's task board. Without
@@ -38,58 +49,75 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   // This runs on every page in the app, so it must never be able to take
   // the whole layout down — timeout-protected, and any failure (timeout or
-  // otherwise) falls back to an empty switcher instead of throwing, since
-  // a missing dropdown is a much smaller problem than every page crashing.
-  let switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = [];
-  try {
-    switcherProjects = await withTimeout(listProjectsForSwitcher(organizationId), 5000, "project switcher");
-  } catch {
-    // swallow — empty switcher is an acceptable degraded state
-  }
+  // otherwise) falls back to a generic/degraded sidebar instead of
+  // throwing. The account-info group and the admin-nav check are
+  // independent of each other, fired together (not one `await`ed before
+  // the other starts) so their round trips overlap instead of stacking —
+  // this used to be two sequential `await`s, paying two full round trips
+  // back-to-back on literally every page load in the app.
+  const accountInfoPromise = withTimeout(
+    Promise.all([
+      listProjectsForSwitcher(organizationId),
+      getOrganizationActorName(organizationId),
+      getOrganizationContactEmail(organizationId),
+    ]),
+    5000,
+    "sidebar account info"
+  ).catch(() => null);
 
   // Shows the Admin link only for the platform-owner organization — every
   // /admin page/action re-checks this itself (requirePlatformAdmin), so
   // this is purely cosmetic, not the actual security boundary.
-  let showAdminNav = false;
-  try {
-    showAdminNav = await withTimeout(isPlatformAdminOrg(organizationId), 5000, "platform admin check");
-  } catch {
-    // swallow — worst case, the nav link is briefly missing, not a security issue
-  }
+  const showAdminNavPromise = withTimeout(getOrganizationIsPlatformAdmin(organizationId), 5000, "platform admin check").catch(
+    () => false
+  );
+
+  const [accountInfo, showAdminNav] = await Promise.all([accountInfoPromise, showAdminNavPromise]);
+  const switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = accountInfo?.[0] ?? [];
+  const accountName = accountInfo?.[1] ?? "Agency";
+  const accountEmail = accountInfo?.[2] ?? "";
   const nav = showAdminNav ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex h-screen w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-4">
-        <div className="mb-4 flex items-center gap-2 border-b border-border pb-3">
-          <Image src="/logo.png" alt="" width={40} height={40} className="shrink-0 rounded-md" />
-          <div>
-            <div className="text-sm font-semibold leading-tight">
-              DEV<span className="text-[#2a78d6]">OS</span>
+    <SidebarProvider className="bg-background text-foreground">
+      <Sidebar collapsible="none" className="h-screen w-56 shrink-0 border-r border-border">
+        <SidebarHeader className="border-b border-border">
+          <div className="flex items-center gap-2 px-1 py-1">
+            <Image src="/Devos%20logo.png" alt="" width={52} height={52} priority className="shrink-0 rounded-md" />
+            <div>
+              <div className="text-sm font-semibold leading-tight">
+                DEV<span className="text-[#2a78d6]">OS</span>
+              </div>
+              <div className="text-xs text-muted-foreground">MVP</div>
             </div>
-            <div className="text-xs text-muted-foreground">MVP</div>
           </div>
-        </div>
-        {/* Jumping straight to a specific project is the most frequent
-            sidebar action for a solo dev juggling several at once, so it
-            gets the prime spot right under the logo. Search still works
-            everywhere via Ctrl/Cmd+K; its visible trigger moved to the
-            bottom to make room. */}
-        <div className="mb-4">
-          <ProjectSwitcher projects={switcherProjects} />
-        </div>
-        <SidebarNav items={nav} />
-        <div className="mt-4 border-t border-border pt-3">
-          <SearchTrigger />
-          <LogoutButton
-            action={logoutAction}
-            triggerLabel="Log out"
-            triggerClassName="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
-          />
-        </div>
-      </aside>
-      <main className="h-screen min-w-0 flex-1 overflow-y-auto p-8">{children}</main>
+        </SidebarHeader>
+
+        <SidebarContent>
+          {/* Jumping straight to a specific project is the most frequent
+              sidebar action for a solo dev juggling several at once, so it
+              gets the prime spot right under the logo. No visible search
+              trigger in the sidebar anymore, but Ctrl/Cmd+K still opens the
+              command palette from anywhere — CommandPalette below is
+              mounted unconditionally. */}
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <ProjectSwitcher projects={switcherProjects} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarNav items={nav} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter className="border-t border-border">
+          <SidebarAccountMenu name={accountName} email={accountEmail} />
+        </SidebarFooter>
+      </Sidebar>
+      <main className="h-screen min-w-0 flex-1 overflow-y-auto bg-[#F5F5F5] p-12">{children}</main>
       <CommandPalette />
-    </div>
+    </SidebarProvider>
   );
 }
