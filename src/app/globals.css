@@ -50,31 +50,33 @@
 }
 
 /*
- * "Fox + Blue Accent" brand palette — Fox Orange (#EA580C) for fills,
- * progress, and active/highlighted states; Royal Blue (#2563EB, the
- * separate --link token below) for links and clickable text, so the two
- * accent colors never compete for the same element; Dark Slate (#111827)
- * text; Light Gray (#F9FAFB) page background; White surfaces. Border/
- * muted/secondary surfaces below borrow neighboring shades from
- * Tailwind's own gray scale (Dark Slate is literally gray-900, Light Gray
- * is literally gray-50) to stay one coherent cool-neutral family.
+ * "Nike" monochrome palette — pure black/white/gray, no color accent at
+ * all. --primary (buttons, fills, progress, active/highlighted states)
+ * and --link (links, clickable text) both drop from orange/blue down to
+ * near-black and dark gray respectively, so the whole app reads as one
+ * tonal system instead of a two-hue brand. Background/card/border/muted/
+ * foreground were already pure Tailwind gray-scale from the previous
+ * palette (Dark Slate is gray-900, Light Gray is gray-50) and needed no
+ * change — this really is just retiring the two accent hues.
  *
  * Deliberately NOT touched here: the app's semantic status colors (task
- * Done/green, Blocked/red, In Progress, priority Critical/Medium pills) —
- * those are hardcoded per-component, not wired to these tokens,
- * specifically so a brand palette change like this one can never silently
- * recolor what a task's status means. That separation was a hard-learned
- * fix earlier in this project (see PROJECT_STATUS.md) after the opposite
- * mistake shipped more than once.
+ * Done/green, Blocked/red, In Progress, priority Critical/Medium pills,
+ * --destructive below) — those are hardcoded per-component (or, for
+ * destructive, kept red on purpose — a danger action should never look
+ * like just another gray button), not wired to these tokens, specifically
+ * so a brand palette change like this one can never silently recolor what
+ * a status means. That separation was a hard-learned fix earlier in this
+ * project (see PROJECT_STATUS.md) after the opposite mistake shipped more
+ * than once.
  */
 :root {
   --card: #ffffff;
   --card-foreground: #111827;
   --popover: #ffffff;
   --popover-foreground: #111827;
-  --primary: #ea580c;
+  --primary: #111827;
   --primary-foreground: #ffffff;
-  --link: #2563eb;
+  --link: #404040;
   --secondary: #f3f4f6;
   --secondary-foreground: #111827;
   --muted: #f3f4f6;
@@ -84,7 +86,7 @@
   --destructive: #d03b3b;
   --border: #e5e7eb;
   --input: #e5e7eb;
-  --ring: #ea580c;
+  --ring: #111827;
   --chart-1: oklch(0.879 0.169 91.605);
   --chart-2: oklch(0.769 0.188 70.08);
   --chart-3: oklch(0.666 0.179 58.318);
@@ -93,12 +95,12 @@
   --radius: 0.625rem;
   --sidebar: #f9fafb;
   --sidebar-foreground: #111827;
-  --sidebar-primary: #ea580c;
+  --sidebar-primary: #111827;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f3f4f6;
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5e7eb;
-  --sidebar-ring: #ea580c;
+  --sidebar-ring: #111827;
   --background: #f9fafb;
   --foreground: #111827;
 }
