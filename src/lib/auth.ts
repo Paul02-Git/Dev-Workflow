@@ -234,6 +234,23 @@ export const getOrganizationIsPlatformAdmin = cache(async (organizationId: strin
  * gets, since that's a materially different, more helpful outcome for
  * someone who still has a live session for a now-deactivated org.
  */
+/**
+ * The organizationId from the session cookie alone — signature-verified,
+ * but with no DB round trip, since that's pure HMAC verification against
+ * an in-request cookie read. Split out of requireAuth() so a caller that
+ * needs the id to kick off its own org-scoped queries doesn't have to wait
+ * for requireAuth()'s DB existence/deactivation check to finish first — see
+ * requireAuth()'s own comment for why that ordering used to cost a real,
+ * measured extra round trip on every single page load in the app.
+ */
+export async function getSessionOrganizationId(): Promise<string> {
+  const store = await cookies();
+  const value = store.get(SESSION_COOKIE_NAME)?.value;
+  const session = parseSessionCookieValue(value);
+  if (!session) throw new Error("Not authenticated");
+  return session.organizationId;
+}
+
 // Wrapped in React's cache() — every page under (dashboard) calls this
 // again on top of the shared layout already calling it once per request,
 // which was previously two round-trips to the same organizations row for
@@ -241,17 +258,26 @@ export const getOrganizationIsPlatformAdmin = cache(async (organizationId: strin
 // render, never persists across requests, so a fresh request always runs
 // the real DB check (and redirect/throw) at least once — this can never
 // serve a stale or bypassed auth result.
+//
+// Takes no arguments, so cache() shares one single in-flight/resolved
+// result across every call in a request regardless of when each caller
+// invokes it — which is what makes it safe for a caller (the dashboard
+// layout) to fire this concurrently alongside other org-scoped queries
+// that already have organizationId from getSessionOrganizationId() above,
+// instead of blocking on this resolving first: if this rejects or
+// redirects, whatever Promise.all it's grouped into rejects/redirects the
+// same way, and nothing from the other now-pointless queries is ever
+// rendered or sent — the only cost of firing them early is a few wasted
+// SELECTs in the rare case the org was deactivated mid-session, never a
+// security exposure, since organizationId itself was already
+// signature-verified before either request starts.
 export const requireAuth = cache(async (): Promise<{ organizationId: string }> => {
-  const store = await cookies();
-  const value = store.get(SESSION_COOKIE_NAME)?.value;
-  const session = parseSessionCookieValue(value);
-  if (!session) throw new Error("Not authenticated");
-
-  const org = await withTimeout(getOrganizationCore(session.organizationId), 5000, "requireAuth");
+  const organizationId = await getSessionOrganizationId();
+  const org = await withTimeout(getOrganizationCore(organizationId), 5000, "requireAuth");
   if (!org) throw new Error("Not authenticated");
   if (org.deletedAt) redirect("/account-deactivated");
 
-  return session;
+  return { organizationId };
 });
 
 // ---------------------------------------------------------------------------

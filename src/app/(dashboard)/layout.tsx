@@ -16,6 +16,7 @@ import { listProjectsForSwitcher } from "@/lib/queries/projects";
 import { withTimeout } from "@/lib/with-timeout";
 import {
   requireAuth,
+  getSessionOrganizationId,
   getOrganizationActorName,
   getOrganizationContactEmail,
   getOrganizationIsPlatformAdmin,
@@ -45,16 +46,24 @@ const NAV = [
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { organizationId } = await requireAuth();
+  // organizationId comes from the signed cookie alone — no DB round trip
+  // (see getSessionOrganizationId's own comment). The org-scoped queries
+  // below can start immediately on that, instead of waiting for
+  // requireAuth()'s own DB existence/deactivation check to finish first —
+  // measured, this layout was previously paying a full extra sequential
+  // round trip on every single page load in the app for exactly that
+  // ordering. requireAuth() still runs and is still what actually enforces
+  // the security boundary (see its own comment on why firing it alongside
+  // these, rather than before them, doesn't weaken that).
+  const organizationId = await getSessionOrganizationId();
 
   // This runs on every page in the app, so it must never be able to take
   // the whole layout down — timeout-protected, and any failure (timeout or
   // otherwise) falls back to a generic/degraded sidebar instead of
   // throwing. The account-info group and the admin-nav check are
-  // independent of each other, fired together (not one `await`ed before
-  // the other starts) so their round trips overlap instead of stacking —
-  // this used to be two sequential `await`s, paying two full round trips
-  // back-to-back on literally every page load in the app.
+  // independent of each other and of requireAuth() itself, all fired
+  // together rather than staged one after another, so their round trips
+  // overlap instead of stacking.
   const accountInfoPromise = withTimeout(
     Promise.all([
       listProjectsForSwitcher(organizationId),
@@ -72,7 +81,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     () => false
   );
 
-  const [accountInfo, showAdminNav] = await Promise.all([accountInfoPromise, showAdminNavPromise]);
+  const [, accountInfo, showAdminNav] = await Promise.all([requireAuth(), accountInfoPromise, showAdminNavPromise]);
   const switcherProjects: Awaited<ReturnType<typeof listProjectsForSwitcher>> = accountInfo?.[0] ?? [];
   const accountName = accountInfo?.[1] ?? "Agency";
   const accountEmail = accountInfo?.[2] ?? "";
