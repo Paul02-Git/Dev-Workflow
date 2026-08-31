@@ -283,11 +283,25 @@ export async function replaceAttachmentAction(formData: FormData) {
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
+// If the deleted project was the one pinned in the dashboard Command
+// Center's cookie, that cookie now points at a project that no longer
+// exists — dashboard/page.tsx already falls back to the auto-pick when
+// that happens, but clearing the cookie here means it stops pointing at a
+// ghost id going forward instead of silently being ignored forever.
+async function clearDashboardPanelCookieIfMatches(projectId: string) {
+  const cookieStore = await cookies();
+  if (cookieStore.get("dashboard_panel")?.value === projectId) {
+    cookieStore.set("dashboard_panel", "", { path: "/", maxAge: 0 });
+  }
+}
+
 export async function deleteProjectAction(projectId: string) {
   const { organizationId } = await requireAuth();
   await deleteProject(projectId, organizationId);
+  await clearDashboardPanelCookieIfMatches(projectId);
   revalidatePath("/projects");
   revalidatePath("/clients");
+  revalidatePath("/dashboard");
   redirect("/projects");
 }
 
@@ -302,6 +316,7 @@ export async function deleteProjectAction(projectId: string) {
 export async function deleteProjectFromListAction(projectId: string) {
   const { organizationId } = await requireAuth();
   await deleteProject(projectId, organizationId);
+  await clearDashboardPanelCookieIfMatches(projectId);
   revalidatePath("/projects");
   revalidatePath("/clients");
   revalidatePath("/dashboard");

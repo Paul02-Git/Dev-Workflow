@@ -123,8 +123,15 @@ export default async function DashboardPage({
   // worth keeping an eye on day to day. `?panel=<id>` overrides this pick
   // (set by the panel's own project switcher) and can point at any
   // project, not just active ones.
-  const isAuto = !resolvedPanel;
-  const featuredProjectId = resolvedPanel ?? launchRanking[0]?.projectId ?? projects[0]?.id ?? null;
+  //
+  // A pinned id (URL or cookie) can go stale the moment that project gets
+  // deleted — without this check the panel would keep trying to feature a
+  // project that no longer exists and render "No projects yet" even while
+  // other real projects are sitting right there in Active Projects. Falls
+  // straight back to the normal auto-pick instead.
+  const validPanel = resolvedPanel && projects.some((p) => p.id === resolvedPanel) ? resolvedPanel : undefined;
+  const isAuto = !validPanel;
+  const featuredProjectId = validPanel ?? launchRanking[0]?.projectId ?? projects[0]?.id ?? null;
 
   return (
     // No color/bleed trick needed here anymore — <main> in the shared
