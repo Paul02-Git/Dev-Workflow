@@ -10,7 +10,7 @@ export function CreateClientForm() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>+ New Client</Button>
+      <Button onClick={() => setOpen(true)}>Create client</Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">

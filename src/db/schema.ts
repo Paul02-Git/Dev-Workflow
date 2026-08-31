@@ -178,6 +178,9 @@ export const projects = pgTable(
     status: projectStatusEnum("status").notNull().default("ACTIVE"),
     healthScore: integer("health_score").notNull().default(0),
     launchReady: boolean("launch_ready").notNull().default(false),
+    // Pins a project to the top of the list/card view — a personal
+    // "keep this one handy" flag, not a project lifecycle state.
+    isPinned: boolean("is_pinned").notNull().default(false),
     domain: text("domain"),
     targetLaunchDate: timestamp("target_launch_date"),
     // Bearer token for the public read-only /handoff/[token] page — null

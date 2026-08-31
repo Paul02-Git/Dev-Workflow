@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { UserPlusIcon } from "lucide-react";
+import { UserPlusIcon, XIcon } from "lucide-react";
 import { generateIntakeLinkAction, revokeIntakeLinkAction } from "@/lib/actions";
 
+// Deliberately compact - one always-visible control in the header rather
+// than a full-width card, since a client intake link is set up once and
+// then mostly just needs to stay reachable, not take up a whole row.
 export function IntakeLinkPanel({ token }: { token: string | null }) {
   const [, startTransition] = useTransition();
   const [currentToken, setCurrentToken] = useState(token);
@@ -13,59 +16,49 @@ export function IntakeLinkPanel({ token }: { token: string | null }) {
   const path = currentToken ? `/intake/${currentToken}` : null;
 
   return (
-    <div className="app-card flex flex-wrap items-center justify-between gap-3 p-3.5">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#eafaea] text-[#0ca30c]">
-          <UserPlusIcon className="size-4" />
-        </span>
-        <div>
-          <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">New Client Intake</div>
-          <div className="text-xs text-muted-foreground">
-            One link — share it broadly. Filling it out creates the client for you automatically.
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="truncate rounded-md border border-black/15 bg-white px-2.5 py-1.5 text-xs">
-          {path ?? "Not generated yet"}
-        </code>
+    <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-input bg-card px-2.5 text-xs">
+      <UserPlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${currentToken ? "bg-[#0ca30c]" : "bg-muted-foreground/40"}`}
+        title={currentToken ? "Intake link is live" : "Intake link not generated yet"}
+      />
+      <button
+        type="button"
+        disabled={generating}
+        onClick={async () => {
+          if (currentToken) {
+            await navigator.clipboard.writeText(`${window.location.origin}${path}`);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+            return;
+          }
+          setGenerating(true);
+          startTransition(async () => {
+            const newToken = await generateIntakeLinkAction();
+            setCurrentToken(newToken);
+            setGenerating(false);
+          });
+        }}
+        className="whitespace-nowrap font-medium text-foreground hover:text-link disabled:opacity-50"
+      >
+        {currentToken ? (copied ? "Copied!" : "Copy intake link") : generating ? "Generating..." : "Generate intake link"}
+      </button>
+      {currentToken && (
         <button
           type="button"
-          disabled={generating}
-          onClick={async () => {
-            if (currentToken) {
-              await navigator.clipboard.writeText(`${window.location.origin}${path}`);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-              return;
+          onClick={() => {
+            if (confirm("Revoke the intake link? It will stop working immediately.")) {
+              startTransition(() => revokeIntakeLinkAction());
+              setCurrentToken(null);
             }
-            setGenerating(true);
-            startTransition(async () => {
-              const newToken = await generateIntakeLinkAction();
-              setCurrentToken(newToken);
-              setGenerating(false);
-            });
           }}
-          className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
+          aria-label="Revoke intake link"
+          title="Revoke intake link"
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-[#d03b3b]"
         >
-          {currentToken ? (copied ? "Copied ✓" : "Copy link") : generating ? "Generating…" : "Generate link"}
+          <XIcon className="size-3.5" />
         </button>
-        {currentToken && (
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm("Revoke the intake link? It'll stop working immediately.")) {
-                startTransition(() => revokeIntakeLinkAction());
-                setCurrentToken(null);
-              }
-            }}
-            className="text-xs text-muted-foreground hover:text-[#d03b3b]"
-          >
-            Revoke
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 }

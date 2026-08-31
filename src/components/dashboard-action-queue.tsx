@@ -33,7 +33,7 @@ export function DashboardActionQueue({ items, previewLimit = 6 }: { items: Actio
   const totalMinutes = items.reduce((sum, a) => sum + a.estimateMinutes, 0);
 
   return (
-    <Card size="sm" className="h-full">
+    <Card id="action-queue" size="sm" className="h-full">
       <CardHeader>
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#eef2fb] text-[#2a4d8f]">

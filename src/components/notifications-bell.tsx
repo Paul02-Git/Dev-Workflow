@@ -9,10 +9,10 @@ import { formatActivitySentence, relativeTime, type ActivityRow } from "@/lib/fo
 
 type NotificationRow = ActivityRow & { projectId: string; projectName: string; clientName: string };
 
-const STORAGE_KEY = "devos.dashboard.dismissed-client-activity";
+const STORAGE_KEY = "devos.dashboard.read-client-activity";
 const STREAM_URL = "/api/dashboard/client-activity/stream";
 
-function readStoredDismissedIds(): Set<string> {
+function readStoredReadIds(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? new Set(JSON.parse(raw)) : new Set();
@@ -21,7 +21,7 @@ function readStoredDismissedIds(): Set<string> {
   }
 }
 
-function writeStoredDismissedIds(ids: Set<string>) {
+function writeStoredReadIds(ids: Set<string>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
   } catch {
@@ -48,16 +48,17 @@ function writeStoredDismissedIds(ids: Set<string>) {
  * every ~25s on purpose — see the route's own comment), so there's no
  * manual retry logic needed here.
  *
- * "Clear" records the *ids* currently on screen into a dismissed set,
- * rather than a cutoff timestamp — a timestamp comparison (`createdAt >
- * clearedAt`) silently fails if the server's clock and the browser's
+ * Notifications are never removed from the list — "Mark all as read"
+ * (and clicking an individual row) only flips read state, tracked by
+ * *id* rather than a cutoff timestamp: a timestamp comparison (`createdAt
+ * > readAt`) silently fails if the server's clock and the browser's
  * clock disagree even slightly, which is exactly what happened the first
  * time this was built with one. Id membership has no such failure mode.
  *
- * Dismissed ids are persisted to localStorage (per-browser, not a real
+ * Read ids are persisted to localStorage (per-browser, not a real
  * per-user account — this is a single shared-password app with no such
- * concept) so navigating away and back, or reloading, doesn't resurrect
- * what was already cleared. State starts empty here to match what the
+ * concept) so navigating away and back, or reloading, doesn't resurface
+ * what was already read. State starts empty here to match what the
  * server renders (it has no access to localStorage), then syncs from
  * storage in an effect right after mount — reading storage genuinely
  * requires an effect, unlike deriving state that's already available
@@ -70,13 +71,23 @@ function writeStoredDismissedIds(ids: Set<string>) {
  */
 export function NotificationsBell({ activity }: { activity: NotificationRow[] }) {
   const router = useRouter();
+  // `activity` only seeds the very first paint (SSR/hydration) - it is
+  // deliberately never re-synced after that. Any Dashboard navigation that
+  // changes a search param (e.g. switching the Command Center's featured
+  // project via ?panel=) re-renders the whole page server-side and hands
+  // down a brand-new `activity` array - always portfolio-wide, but capped
+  // to a shorter page-load slice than the live stream fetches. Syncing on
+  // every prop change used to reset liveActivity back down to that shorter
+  // slice on every navigation, which read as notifications disappearing.
+  // The live SSE stream (already portfolio-wide, see the route) is the
+  // sole source of truth for everything after first paint.
   const [liveActivity, setLiveActivity] = useState(activity);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     queueMicrotask(() => {
-      const stored = readStoredDismissedIds();
-      if (stored.size > 0) setDismissedIds(stored);
+      const stored = readStoredReadIds();
+      if (stored.size > 0) setReadIds(stored);
     });
   }, []);
 
@@ -118,14 +129,16 @@ export function NotificationsBell({ activity }: { activity: NotificationRow[] })
     };
   }, []);
 
-  const [prevActivity, setPrevActivity] = useState(activity);
-  if (activity !== prevActivity) {
-    setPrevActivity(activity);
-    setLiveActivity(activity);
-  }
+  const unreadCount = liveActivity.filter((row) => !readIds.has(row.id)).length;
 
-  const visible = liveActivity.filter((row) => !dismissedIds.has(row.id));
-  const shown = visible.slice(0, 8);
+  function markRead(ids: string[]) {
+    setReadIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      writeStoredReadIds(next);
+      return next;
+    });
+  }
 
   return (
     <DropdownMenu>
@@ -139,54 +152,63 @@ export function NotificationsBell({ activity }: { activity: NotificationRow[] })
         }
       >
         <BellIcon className="size-4" />
-        {visible.length > 0 && (
+        {unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d03b3b] px-1 text-[10px] font-bold text-white">
-            {visible.length}
+            {unreadCount}
           </span>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between px-3 py-2.5">
           <span className="text-xs font-semibold text-muted-foreground">Client Activity</span>
-          {visible.length > 0 && (
+          {unreadCount > 0 && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setDismissedIds((prev) => {
-                  const next = new Set(prev);
-                  for (const row of liveActivity) next.add(row.id);
-                  writeStoredDismissedIds(next);
-                  return next;
-                });
+                markRead(liveActivity.map((row) => row.id));
               }}
               className="text-xs font-semibold text-link hover:underline"
             >
-              Clear
+              Mark all as read
             </button>
           )}
         </div>
-        {shown.length === 0 ? (
-          <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {dismissedIds.size > 0 ? "All caught up." : "No client activity yet."}
-          </div>
+        {liveActivity.length === 0 ? (
+          <div className="px-3 py-6 text-center text-sm text-muted-foreground">No client activity yet.</div>
         ) : (
-          shown.map((row) => {
-            const { rest } = formatActivitySentence(row);
-            return (
-              <DropdownMenuItem key={row.id} onClick={() => router.push(`/projects/${row.projectId}?tab=client-activity`)}>
-                <ActorAvatar name={row.clientName} size={28} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">
-                    {row.clientName} <span className="font-normal text-muted-foreground">· {row.projectName}</span>
+          // Nothing is ever truncated or removed — past 9 rows the list
+          // scrolls inside a fixed-height container instead of hiding
+          // older notifications.
+          <div className={`space-y-1 ${liveActivity.length > 9 ? "max-h-[27rem] overflow-y-auto" : ""}`}>
+            {liveActivity.map((row) => {
+              const { rest } = formatActivitySentence(row);
+              const isUnread = !readIds.has(row.id);
+              return (
+                <DropdownMenuItem
+                  key={row.id}
+                  onClick={() => {
+                    markRead([row.id]);
+                    router.push(`/projects/${row.projectId}?tab=client-activity`);
+                  }}
+                  className={isUnread ? "bg-[#eef2fb]" : undefined}
+                >
+                  <ActorAvatar name={row.clientName} size={28} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold">
+                        {row.clientName} <span className="font-normal text-muted-foreground">· {row.projectName}</span>
+                      </span>
+                      {isUnread && <span className="size-1.5 shrink-0 rounded-full bg-[#2a78d6]" />}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {rest} · {relativeTime(row.createdAt)}
+                    </div>
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {rest} · {relativeTime(row.createdAt)}
-                  </div>
-                </div>
-              </DropdownMenuItem>
-            );
-          })
+                </DropdownMenuItem>
+              );
+            })}
+          </div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

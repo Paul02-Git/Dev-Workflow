@@ -4,15 +4,6 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { XIcon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const SHOW_LABELS: Record<string, string> = {
-  all: "All Projects",
-  ACTIVE: "Active",
-  ON_HOLD: "On Hold",
-  LAUNCHED: "Launched",
-  ARCHIVED: "Archived",
-};
-const SHOW_KEYS = ["all", "ACTIVE", "ON_HOLD", "LAUNCHED", "ARCHIVED"];
-
 const SORT_LABELS: Record<string, string> = {
   created: "Date Created",
   deadline: "Deadline",
@@ -30,15 +21,11 @@ const GROUP_LABELS: Record<string, string> = {
 const GROUP_KEYS = ["none", "status", "client"];
 
 export function ProjectsToolbar({
-  status,
-  statusCounts,
   sort,
   group,
   tech,
   technologyOptions,
 }: {
-  status: string;
-  statusCounts: Record<string, number>;
   sort: string;
   group: string;
   tech: string;
@@ -50,7 +37,8 @@ export function ProjectsToolbar({
 
   function setParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
-    if (value === null || value === "" || value === "all" || value === "none") {
+    const cleared = value === null || value === "" || value === "all" || value === "none";
+    if (cleared) {
       params.delete(key);
     } else {
       params.set(key, value);
@@ -58,27 +46,18 @@ export function ProjectsToolbar({
     // Any filter/sort/group change invalidates the current page's meaning.
     params.delete("page");
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
+
+    // Remembered via a cookie too (not just the URL) - the same pattern
+    // ProjectsViewSwitcher uses - so a plain /projects link (sidebar,
+    // breadcrumb, etc.) still opens on whatever was last chosen instead of
+    // resetting to the URL-less default.
+    document.cookie = cleared
+      ? `projects_${key}=; path=/; max-age=0`
+      : `projects_${key}=${encodeURIComponent(value)}; path=/; max-age=31536000`;
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <span>Show:</span>
-        <Select value={status || "all"} items={SHOW_LABELS} onValueChange={(v) => setParam("status", v as string)}>
-          <SelectTrigger size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false} className="w-max min-w-40">
-            {SHOW_KEYS.map((k) => (
-              <SelectItem key={k} value={k}>
-                {SHOW_LABELS[k]}
-                <span className="text-muted-foreground">({statusCounts[k] ?? 0})</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <span>Sort:</span>
         <Select value={sort || "created"} items={SORT_LABELS} onValueChange={(v) => setParam("sort", v as string)}>

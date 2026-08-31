@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { MoreVerticalIcon, ExternalLinkIcon, UsersIcon, Trash2Icon } from "lucide-react";
+import { MoreVerticalIcon, ExternalLinkIcon, UsersIcon, Trash2Icon, StarIcon, StarOffIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +23,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { updateProjectStatusAction, deleteProjectFromListAction } from "@/lib/actions";
+import { updateProjectStatusAction, deleteProjectFromListAction, toggleProjectPinnedAction } from "@/lib/actions";
 import { STATUS_LABEL } from "@/lib/project-display";
 
 const STATUSES = ["ACTIVE", "ON_HOLD", "LAUNCHED", "ARCHIVED"];
@@ -33,11 +33,13 @@ export function ProjectRowActions({
   projectName,
   currentStatus,
   clientId,
+  isPinned,
 }: {
   projectId: string;
   projectName: string;
   currentStatus: string;
   clientId?: string;
+  isPinned?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -59,7 +61,14 @@ export function ProjectRowActions({
               variant="ghost"
               size="icon-sm"
               aria-label="Project actions"
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              onClick={(e: React.MouseEvent) => {
+                // Guards against being nested inside a <Link> card (the
+                // grid view) as well as the table row's own click-to-navigate
+                // handler — stopPropagation alone stops the JS router.push,
+                // but a real <a> ancestor still needs preventDefault too.
+                e.preventDefault();
+                e.stopPropagation();
+              }}
             />
           }
         >
@@ -72,6 +81,19 @@ export function ProjectRowActions({
           {clientId && (
             <DropdownMenuItem onClick={() => router.push(`/clients/${clientId}`)}>
               <UsersIcon /> View client
+            </DropdownMenuItem>
+          )}
+          {isPinned !== undefined && (
+            <DropdownMenuItem onClick={() => startTransition(() => toggleProjectPinnedAction(projectId, !isPinned))}>
+              {isPinned ? (
+                <>
+                  <StarOffIcon /> Unpin project
+                </>
+              ) : (
+                <>
+                  <StarIcon /> Pin project
+                </>
+              )}
             </DropdownMenuItem>
           )}
           <DropdownMenuSub>

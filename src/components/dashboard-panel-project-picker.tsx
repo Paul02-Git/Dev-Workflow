@@ -13,12 +13,20 @@ type SwitcherProject = {
   technologyNames: string[];
 };
 
+const PANEL_COOKIE = "dashboard_panel";
+
 /**
  * Lets you override which project the dashboard's Command Center panel
  * shows — it defaults to whichever active project ranks #1 by launch
  * readiness, but any project can be pinned instead via this dropdown.
  * "Auto" clears the override (drops the `panel` query param) to go back
  * to that automatic pick.
+ *
+ * The choice is also remembered in a cookie, not just the URL, so leaving
+ * `/dashboard` for another page and coming back on a plain link still
+ * shows whichever project was last pinned instead of resetting to Auto —
+ * same pattern as ProjectsViewSwitcher/ProjectsToolbar use for the
+ * Projects list's own view/sort/group/tech choices.
  */
 export function DashboardPanelProjectPicker({
   projects,
@@ -45,7 +53,13 @@ export function DashboardPanelProjectPicker({
         <ChevronsUpDownIcon className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem onClick={() => router.push("/dashboard")} className={isAuto ? "bg-[#eef2fb]" : undefined}>
+        <DropdownMenuItem
+          onClick={() => {
+            document.cookie = `${PANEL_COOKIE}=; path=/; max-age=0`;
+            router.push("/dashboard");
+          }}
+          className={isAuto ? "bg-[#eef2fb]" : undefined}
+        >
           <SparklesIcon className="size-3.5" />
           <span className="flex-1">Auto (highest launch readiness)</span>
           {isAuto && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
@@ -55,7 +69,10 @@ export function DashboardPanelProjectPicker({
           return (
             <DropdownMenuItem
               key={p.id}
-              onClick={() => router.push(`/dashboard?panel=${p.id}`)}
+              onClick={() => {
+                document.cookie = `${PANEL_COOKIE}=${p.id}; path=/; max-age=31536000`;
+                router.push(`/dashboard?panel=${p.id}`);
+              }}
               className={isCurrent ? "bg-[#eef2fb]" : undefined}
             >
               <div className="flex min-w-0 flex-1 items-center gap-2">

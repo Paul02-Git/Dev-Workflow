@@ -30,6 +30,7 @@ import {
   createAdHocTask,
   updateProjectOverview,
   updateProjectStatus,
+  setProjectPinned,
   setTaskWaitingOnClient,
   updateProjectNotes,
 } from "@/lib/queries/projects";
@@ -356,6 +357,13 @@ export async function updateProjectStatusAction(projectId: string, status: strin
   const { organizationId } = await requireAuth();
   await updateProjectStatus(projectId, organizationId, status);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+}
+
+export async function toggleProjectPinnedAction(projectId: string, pinned: boolean) {
+  const { organizationId } = await requireAuth();
+  await setProjectPinned(projectId, organizationId, pinned);
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }

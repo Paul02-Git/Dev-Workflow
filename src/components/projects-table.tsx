@@ -117,7 +117,7 @@ export function ProjectsTable({ projects }: { projects: ProjectCardData[] }) {
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto p-2">
         <table className="w-full min-w-[900px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -221,7 +221,13 @@ export function ProjectsTable({ projects }: { projects: ProjectCardData[] }) {
                     )}
                   </td>
                   <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
-                    <ProjectRowActions projectId={p.id} projectName={p.name} currentStatus={p.status} clientId={p.clientId} />
+                    <ProjectRowActions
+                      projectId={p.id}
+                      projectName={p.name}
+                      currentStatus={p.status}
+                      clientId={p.clientId}
+                      isPinned={p.isPinned}
+                    />
                   </td>
                 </tr>
               );

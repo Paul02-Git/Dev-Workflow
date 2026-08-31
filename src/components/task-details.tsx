@@ -23,7 +23,7 @@ import {
 // attachment). This panel resolves them itself, only when actually opened.
 type Attachment = { id: string; url: string | null; storagePath: string | null; label: string | null };
 
-function toDateInputValue(date: Date | string | null): string {
+export function toDateInputValue(date: Date | string | null): string {
   if (!date) return "";
   const d = new Date(date);
   return d.toISOString().slice(0, 10);

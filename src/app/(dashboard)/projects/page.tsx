@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   listProjects,
   listAllTasks,
@@ -6,9 +7,10 @@ import {
   deriveProjectCardSummaries,
 } from "@/lib/queries/projects";
 import type { ProjectCardData } from "@/components/project-card";
-import { ProjectsStatRow } from "@/components/projects-stat-row";
 import { ProjectsViewSwitcher } from "@/components/projects-view-switcher";
 import { ProjectsToolbar } from "@/components/projects-toolbar";
+import { ProjectsFilterTabs } from "@/components/projects-filter-tabs";
+import { ProjectsSearchBox } from "@/components/projects-search-box";
 import { ProjectsTable } from "@/components/projects-table";
 import { ProjectsPagination } from "@/components/projects-pagination";
 import { ProjectCard } from "@/components/project-card";
@@ -93,15 +95,23 @@ export default async function ProjectsPage({
     view?: string;
     page?: string;
     pageSize?: string;
+    q?: string;
   }>;
 }) {
   const { organizationId } = await requireAuth();
   const params = await searchParams;
   const statusFilter = params.status ?? "all";
-  const sort = params.sort ?? "created";
-  const group = params.group ?? "none";
-  const techFilter = params.tech ?? "";
-  const view = params.view ?? "list";
+  const query = (params.q ?? "").trim().toLowerCase();
+  // No explicit ?view=/?sort=/?group=/?tech= in the URL (e.g. the sidebar's
+  // plain /projects link) falls back to whichever value was last chosen,
+  // remembered via cookies set by ProjectsViewSwitcher/ProjectsToolbar —
+  // otherwise every navigation away and back reset to the URL-less default
+  // regardless of what the user picked.
+  const cookieStore = await cookies();
+  const sort = params.sort ?? cookieStore.get("projects_sort")?.value ?? "created";
+  const group = params.group ?? cookieStore.get("projects_group")?.value ?? "none";
+  const techFilter = params.tech ?? cookieStore.get("projects_tech")?.value ?? "";
+  const view = params.view ?? cookieStore.get("projects_view")?.value ?? "list";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const pageSize = [10, 25, 50].includes(parseInt(params.pageSize ?? "10", 10))
     ? parseInt(params.pageSize ?? "10", 10)
@@ -127,6 +137,7 @@ export default async function ProjectsPage({
     projectType: p.projectType,
     status: p.status,
     healthScore: p.healthScore,
+    isPinned: p.isPinned,
     clientName: p.clientName,
     clientId: p.clientId,
     domain: p.domain,
@@ -148,21 +159,28 @@ export default async function ProjectsPage({
   }));
 
   const statusCounts: Record<string, number> = { all: allCards.length };
-  for (const c of allCards) statusCounts[c.status] = (statusCounts[c.status] ?? 0) + 1;
+  for (const c of allCards) {
+    statusCounts[c.status] = (statusCounts[c.status] ?? 0) + 1;
+    if (c.isPinned) statusCounts.PINNED = (statusCounts.PINNED ?? 0) + 1;
+  }
 
   const technologyOptions = Array.from(new Set(allCards.flatMap((c) => c.technologyNames))).sort();
 
-  const activeCards = allCards.filter((c) => c.status === "ACTIVE");
-  const avgActiveHealth =
-    activeCards.length > 0
-      ? Math.round(activeCards.reduce((sum, c) => sum + c.healthScore, 0) / activeCards.length)
-      : null;
-  const launchingSoonCount = activeCards.filter(
-    (c) => c.daysToLaunch !== null && c.daysToLaunch >= 0 && c.daysToLaunch <= 7
-  ).length;
-
-  let filtered = statusFilter === "all" ? allCards : allCards.filter((c) => c.status === statusFilter);
+  let filtered =
+    statusFilter === "all"
+      ? allCards
+      : statusFilter === "PINNED"
+        ? allCards.filter((c) => c.isPinned)
+        : allCards.filter((c) => c.status === statusFilter);
   if (techFilter) filtered = filtered.filter((c) => c.technologyNames.includes(techFilter));
+  if (query) {
+    filtered = filtered.filter(
+      (c) =>
+        c.name.toLowerCase().includes(query) ||
+        c.clientName.toLowerCase().includes(query) ||
+        (c.domain?.toLowerCase().includes(query) ?? false)
+    );
+  }
   filtered = sortProjects(filtered, sort);
 
   const groups = group !== "none" ? groupProjects(filtered, group) : null;
@@ -176,36 +194,29 @@ export default async function ProjectsPage({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold">Projects</h1>
-          <p className="text-md text-muted-foreground">
-            {allCards.length} project{allCards.length === 1 ? "" : "s"} across every client
-          </p>
         </div>
-        <Link
-          href="/projects/new"
-          className="shrink-0 rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
-        >
-          + New Project
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ProjectsViewSwitcher active={view} searchParamsString={searchParamsString} />
+          <Link
+            href="/projects/new"
+            className="shrink-0 rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
+          >
+            Create new project
+          </Link>
+        </div>
       </div>
 
-      <ProjectsStatRow
-        totalCount={allCards.length}
-        activeCount={activeCards.length}
-        avgActiveHealth={avgActiveHealth}
-        launchingSoonCount={launchingSoonCount}
+      <ProjectsFilterTabs
+        active={statusFilter}
+        counts={statusCounts}
+        searchParamsString={searchParamsString}
+        right={
+          <>
+            <ProjectsSearchBox initialQuery={params.q ?? ""} />
+            <ProjectsToolbar sort={sort} group={group} tech={techFilter} technologyOptions={technologyOptions} />
+          </>
+        }
       />
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <ProjectsToolbar
-          status={statusFilter}
-          statusCounts={statusCounts}
-          sort={sort}
-          group={group}
-          tech={techFilter}
-          technologyOptions={technologyOptions}
-        />
-        <ProjectsViewSwitcher active={view} searchParamsString={searchParamsString} />
-      </div>
 
       {allCards.length === 0 ? (
         <div className="app-card p-8 text-center">
@@ -229,7 +240,7 @@ export default async function ProjectsPage({
                 <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   {g.label} <span className="font-normal normal-case">· {g.items.length}</span>
                 </h2>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   {g.items.map((project) => (
                     <ProjectCard key={project.id} project={project} />
                   ))}
@@ -238,7 +249,7 @@ export default async function ProjectsPage({
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {filtered.map((project) => (
               <ProjectCard key={project.id} project={project} />
             ))}

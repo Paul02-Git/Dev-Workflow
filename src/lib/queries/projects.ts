@@ -40,6 +40,7 @@ export async function listProjects(organizationId: string) {
       status: projects.status,
       healthScore: projects.healthScore,
       launchReady: projects.launchReady,
+      isPinned: projects.isPinned,
       domain: projects.domain,
       targetLaunchDate: projects.targetLaunchDate,
       launchedAt: projects.launchedAt,
@@ -140,6 +141,17 @@ export async function updateProjectStatus(projectId: string, organizationId: str
     actorName: await getOrganizationActorName(organizationId),
   });
 
+  return project;
+}
+
+// A personal "keep this handy" flag, not a project event worth cluttering
+// the activity log with — unlike updateProjectStatus, no activityLogs row.
+export async function setProjectPinned(projectId: string, organizationId: string, pinned: boolean) {
+  const [project] = await db
+    .update(projects)
+    .set({ isPinned: pinned, updatedAt: new Date() })
+    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
+    .returning();
   return project;
 }
 

@@ -3,7 +3,7 @@ import { getProjectByHandoffToken } from "@/lib/queries/projects";
 import { CLIENT_ACTION_CANONICAL_KEYS } from "@/data/client-action-keys";
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  ACTIVE: { label: "In Progress", color: "#c9720a" },
+  ACTIVE: { label: "In Progress", color: "#2a78d6" },
   ON_HOLD: { label: "On Hold", color: "#898781" },
   LAUNCHED: { label: "Live", color: "#0ca30c" },
   ARCHIVED: { label: "Archived", color: "#898781" },

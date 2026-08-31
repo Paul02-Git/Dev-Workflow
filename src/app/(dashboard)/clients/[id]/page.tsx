@@ -47,6 +47,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     projectType: p.projectType,
     status: p.status,
     healthScore: p.healthScore,
+    isPinned: p.isPinned,
     clientName: client.name,
     clientId: client.id,
     domain: p.domain,

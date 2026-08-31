@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   listProjects,
   listAllTasks,
@@ -28,6 +29,8 @@ import { DashboardRecentActivity } from "@/components/dashboard-recent-activity"
 import { DashboardCommandCenterData } from "@/components/dashboard-command-center-data";
 import { DashboardOnboarding } from "@/components/dashboard-onboarding";
 import { NotificationsBell } from "@/components/notifications-bell";
+import { DashboardWelcomeBanner } from "@/components/dashboard-welcome-banner";
+import { DashboardQuickActionsCard } from "@/components/dashboard-quick-actions-card";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 function CommandCenterSkeleton() {
@@ -41,13 +44,6 @@ function CommandCenterSkeleton() {
   );
 }
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -55,6 +51,13 @@ export default async function DashboardPage({
 }) {
   const { organizationId } = await requireAuth();
   const { panel } = await searchParams;
+  // No explicit ?panel= in the URL (e.g. a plain /dashboard link from the
+  // sidebar or another page) falls back to whichever project was last
+  // pinned, remembered via a cookie set by DashboardPanelProjectPicker —
+  // otherwise every navigation away and back reset to Auto regardless of
+  // what was chosen.
+  const cookieStore = await cookies();
+  const resolvedPanel = panel ?? cookieStore.get("dashboard_panel")?.value ?? undefined;
 
   // Fault-tolerant on its own, separate from the main query group below —
   // a failure here (tech badges, panel picker, the greeting's name)
@@ -120,19 +123,16 @@ export default async function DashboardPage({
   // worth keeping an eye on day to day. `?panel=<id>` overrides this pick
   // (set by the panel's own project switcher) and can point at any
   // project, not just active ones.
-  const isAuto = !panel;
-  const featuredProjectId = panel ?? launchRanking[0]?.projectId ?? projects[0]?.id ?? null;
+  const isAuto = !resolvedPanel;
+  const featuredProjectId = resolvedPanel ?? launchRanking[0]?.projectId ?? projects[0]?.id ?? null;
 
   return (
     // No color/bleed trick needed here anymore — <main> in the shared
     // layout now carries #FDFDFE directly, which covers its full box
     // (padding and scrollbar gutter included) with no seam.
     <div className="w-full">
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-4xl font-bold">Dashboard</h1>
-          <p className="text-md text-muted-foreground">{greeting()}, {ownerName}! 👋</p>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-4xl font-bold">Dashboard</h1>
         <div className="flex items-center gap-2">
           <SearchTrigger className="mb-0 w-64" placeholder="Search projects, tasks, SOPs…" />
           <NotificationsBell activity={clientActivity} />
@@ -148,6 +148,11 @@ export default async function DashboardPage({
       {projects.length === 0 ? (
         <DashboardOnboarding ownerName={ownerName} />
       ) : (
+      <>
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-[3fr_2fr]">
+        <DashboardWelcomeBanner ownerName={ownerName} actionQueueCount={actionQueue.length} />
+        <DashboardQuickActionsCard />
+      </div>
       <div className="flex w-full items-start gap-4">
         <div className="min-w-0 flex-1">
           <DashboardStatRow
@@ -239,6 +244,7 @@ export default async function DashboardPage({
           </Suspense>
         </div>
       </div>
+      </>
       )}
     </div>
   );

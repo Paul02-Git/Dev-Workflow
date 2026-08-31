@@ -13,6 +13,8 @@ import { healthState, launchState } from "@/components/project-pulse-cards";
 import { hashPick } from "@/lib/hash-color";
 import { STATUS_LABEL, PRIORITY_DOT, PROJECT_COLOR_PALETTE, progressColor, formatDate } from "@/lib/project-display";
 import type { ProjectCardSummary } from "@/lib/queries/projects";
+import { PinProjectButton } from "@/components/pin-project-button";
+import { ProjectRowActions } from "@/components/project-row-actions";
 
 export type ProjectCardData = {
   id: string;
@@ -20,6 +22,7 @@ export type ProjectCardData = {
   projectType: string;
   status: string;
   healthScore: number;
+  isPinned: boolean;
   clientName: string;
   clientId: string;
   domain: string | null;
@@ -38,7 +41,9 @@ export function ProjectCard({ project }: { project: ProjectCardData }) {
     projectType,
     status,
     healthScore,
+    isPinned,
     clientName,
+    clientId,
     domain,
     launchedAt,
     daysToLaunch,
@@ -77,9 +82,9 @@ export function ProjectCard({ project }: { project: ProjectCardData }) {
   return (
     <Link
       href={`/projects/${id}`}
-      className={`app-card group flex flex-col gap-3 p-4 transition hover:border-primary/50 hover:shadow-md ${
-        isArchived ? "opacity-70 grayscale-[0.3]" : ""
-      }`}
+      className={`app-card group flex flex-col gap-3 p-4 transition hover:shadow-md ${
+        isLaunched ? "border-[#cdeecd] bg-[#f5fbf5] hover:border-[#0ca30c]/40" : "hover:border-primary/50"
+      } ${isArchived ? "opacity-70 grayscale-[0.3]" : ""}`}
     >
       {/* Identity row */}
       <div className="flex items-start justify-between gap-2">
@@ -101,7 +106,17 @@ export function ProjectCard({ project }: { project: ProjectCardData }) {
             </p>
           </div>
         </div>
-        <Badge className={`shrink-0 ${statusMeta.className}`}>{statusMeta.label}</Badge>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+          <PinProjectButton projectId={id} pinned={isPinned} />
+          <ProjectRowActions
+            projectId={id}
+            projectName={name}
+            currentStatus={status}
+            clientId={clientId}
+            isPinned={isPinned}
+          />
+        </div>
       </div>
 
       {/* Tech stack + project type */}

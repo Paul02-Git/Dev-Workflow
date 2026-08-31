@@ -18,6 +18,10 @@ export type ClientCardData = {
   nextLaunchDate: Date | string | null;
   onRetainer: boolean;
   source: string;
+  createdAt: Date | string;
+  statusLabel: string;
+  statusClassName: string;
+  sourceLabel: string;
 };
 
 export function ClientCard({ client }: { client: ClientCardData }) {
@@ -76,6 +80,9 @@ export function ClientCard({ client }: { client: ClientCardData }) {
       </div>
 
       <div className="flex flex-wrap gap-1.5">
+        <span className={`w-fit rounded-full px-2 py-0.5 text-xs font-bold ${client.statusClassName}`}>
+          {client.statusLabel}
+        </span>
         {client.onRetainer && (
           <span className="w-fit rounded-full bg-[#eafaea] px-2 py-0.5 text-xs font-bold text-[#0ca30c]">
             On retainer
@@ -83,7 +90,7 @@ export function ClientCard({ client }: { client: ClientCardData }) {
         )}
         {client.source === "intake" && (
           <span className="w-fit rounded-full bg-[#eef2fb] px-2 py-0.5 text-xs font-bold text-primary">
-            Self-submitted
+            {client.sourceLabel}
           </span>
         )}
       </div>
